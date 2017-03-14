@@ -20,6 +20,14 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 	switch (c) {
 	case '1': /* --function */
+		if (strlen(optarg) >= XT_LUA_FUNC_SIZE)
+			xtables_error(PARAMETER_PROBLEM,
+				"'--function' is too long (max: %zu)",
+				XT_LUA_FUNC_SIZE - 1);
+
+		strcpy(info->func, optarg);
+
+		*flags = 1;
 		break;
 	}
 
@@ -28,6 +36,8 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 static void nflua_check(unsigned int flags)
 {
+	if (!flags)
+		xtables_error(PARAMETER_PROBLEM, "'--function' is mandatory");
 }
 
 static const struct option nflua_opts[] = {
