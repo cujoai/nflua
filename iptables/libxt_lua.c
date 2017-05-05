@@ -16,6 +16,10 @@ static void nflua_help(void)
 static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 			const void *entry, struct xt_entry_match **match)
 {
+	((void) argv);
+	((void) invert);
+	((void) flags);
+	((void) entry);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) (*match)->data;
 
 	switch (c) {
@@ -45,6 +49,24 @@ static const struct option nflua_opts[] = {
 	XT_GETOPT_TABLEEND,
 };
 
+static void
+nflua_print(const void *ip, const struct xt_entry_match *match, int numeric)
+{
+	((void) ip);
+        struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
+
+        printf(" %s", info->func);
+}
+
+static void
+nflua_save(const void *ip, const struct xt_entry_match *match)
+{
+	((void) ip);
+	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
+
+	printf(" --function %s", info->func);
+}
+
 static struct xtables_match nflua_mt_reg = {
 	.version	= XTABLES_VERSION,
 	.name		= "lua",
@@ -56,6 +78,8 @@ static struct xtables_match nflua_mt_reg = {
 	.parse		= nflua_parse,
 	.final_check	= nflua_check,
 	.extra_opts	= nflua_opts,
+	.save		= nflua_save,
+	.print		= nflua_print,
 };
 
 static void _init(void)
