@@ -13,7 +13,6 @@ all:		${LIB}
 
 CFLAGS=		-L../../../../debian/mips-unknown-linux-gnu/fakeroot/lib \
 		-lxtables -I${CONTRIB}/xtables \
-		-I../../../../kernel/octeon-linux/net/netfilter \
 		${CUJO_CPPFLAGS}
 
 SRCS=		libxt_lua.c
