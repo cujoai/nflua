@@ -1,4 +1,4 @@
-CFLAGS_xt_lua.o := -D_KERNEL -Ilib/lunatik/lua -I../../user/agent/src \
-	-Ilib/luadata
+EXTRA_CFLAGS += -D_KERNEL
+
 obj-y += nf_util.o
 obj-y += xt_lua.o
