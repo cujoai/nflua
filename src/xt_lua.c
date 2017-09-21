@@ -1,4 +1,7 @@
-/* Copyright (C) 2017 CUJO LLC. All rights reserved. */
+/*
+ * This file is Confidential Information of Cujo LLC.
+ * Copyright (c) 2017 CUJO LLC. All rights reserved.
+ */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/module.h>
