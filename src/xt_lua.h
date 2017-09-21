@@ -1,4 +1,7 @@
-/* Copyright (c) 2017 CUJO LLC. All rights reserved. */
+/*
+ * This file is Confidential Information of Cujo LLC.
+ * Copyright (c) 2017 CUJO LLC. All rights reserved.
+ */
 
 #ifndef _XT_LUA_H
 #define _XT_LUA_H

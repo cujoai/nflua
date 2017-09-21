@@ -1,4 +1,7 @@
-/* Copyright (C) 2017 CUJO LLC. All rights reserved */
+/*
+ * This file is Confidential Information of Cujo LLC.
+ * Copyright (C) 2017 CUJO LLC. All rights reserved
+ */
 
 #include <stdio.h>
 #include <string.h>

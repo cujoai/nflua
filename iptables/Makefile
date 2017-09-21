@@ -1,4 +1,5 @@
-#Copyright (c) 2016 CUJO LLC. All rights reserved.
+# This file is Confidential Information of Cujo LLC.
+# Copyright (c) 2016-2017 CUJO LLC. All rights reserved.
 
 include		../Makefile.inc
 
