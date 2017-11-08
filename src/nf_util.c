@@ -24,6 +24,7 @@ int tcp_reply(const struct sk_buff *oldskb, int hook, unsigned char *msg,
 	const struct tcphdr *oth;
 	struct tcphdr _otcph, *tcph;
 	unsigned char *data;
+	size_t tcplen;
 
 	/* IP header checks: fragment. */
 	if (ip_hdr(oldskb)->frag_off & htons(IP_OFFSET))
@@ -79,12 +80,15 @@ int tcp_reply(const struct sk_buff *oldskb, int hook, unsigned char *msg,
 	tcph->psh = 1;
 	tcph->ack = 1;
 
-	tcph->check = ~tcp_v4_check(sizeof(struct tcphdr), niph->saddr,
-				    niph->daddr, 0);
-	nskb->ip_summed = CHECKSUM_COMPLETE;
-
 	data = skb_put(nskb, len);
 	memcpy(data, msg, len);
+
+	tcplen = (nskb->len - (niph->ihl << 2));
+	tcph->check = 0;
+	tcph->check = csum_tcpudp_magic(niph->saddr, niph->daddr,
+					tcplen, IPPROTO_TCP,
+					csum_partial(tcph, tcplen, 0));
+	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
 	/* ip_route_me_harder expects skb->dst to be set */
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
