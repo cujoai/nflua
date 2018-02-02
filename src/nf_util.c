@@ -43,7 +43,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	if ((!(ipv6_addr_type(&oip6h->saddr) & IPV6_ADDR_UNICAST)) ||
 	    (!(ipv6_addr_type(&oip6h->daddr) & IPV6_ADDR_UNICAST))) {
-		pr_debug("addr is not unicast.\n");
+		pr_warn("addr is not unicast.\n");
 		return -1;
 	}
 
@@ -52,7 +52,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 				   &proto, &frag_off);
 
 	if ((tcphoff < 0) || (tcphoff > oldskb->len)) {
-		pr_debug("Cannot get TCP header.\n");
+		pr_warn("Cannot get TCP header.\n");
 		return -1;
 	}
 
@@ -60,7 +60,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	/* IP header checks: fragment, too short. */
 	if (proto != IPPROTO_TCP || otcplen < sizeof(struct tcphdr)) {
-		pr_debug("proto(%d) != IPPROTO_TCP, "
+		pr_warn("proto(%d) != IPPROTO_TCP, "
 			 "or too short. otcplen = %d\n",
 			 proto, otcplen);
 		return -1;
@@ -71,14 +71,14 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	/* No reply for RST. */
 	if (otcph.rst) {
-		pr_debug("RST is set\n");
+		pr_warn("RST is set\n");
 		return -1;
 	}
 
 	/* Check checksum. */
 	if (csum_ipv6_magic(&oip6h->saddr, &oip6h->daddr, otcplen, IPPROTO_TCP,
 			    skb_checksum(oldskb, tcphoff, otcplen, 0))) {
-		pr_debug("TCP checksum is invalid\n");
+		pr_warn("TCP checksum is invalid\n");
 		return -1;
 	}
 
@@ -171,24 +171,34 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
 	size_t tcplen;
 
 	/* IP header checks: fragment. */
-	if (ip_hdr(oldskb)->frag_off & htons(IP_OFFSET))
+	if (ip_hdr(oldskb)->frag_off & htons(IP_OFFSET)) {
+		pr_warn("Packet is fragmented\n");
 		return -1;
+	}
 
 	oth = skb_header_pointer(oldskb, ip_hdrlen(oldskb),
 				 sizeof(_otcph), &_otcph);
-	if (oth == NULL)
+	if (oth == NULL) {
+		pr_warn("Cannot get header pointer\n");
 		return -1;
+	}
 
 	/* No reply for RST. */
-	if (oth->rst)
+	if (oth->rst) {
+		pr_warn("RST is set\n");
 		return -1;
+	}
 
-	if (skb_rtable(oldskb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST))
+	if (skb_rtable(oldskb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST)) {
+		pr_warn("Not a unicast packet\n");
 		return -1;
+	}
 
 	/* Check checksum */
-	if (nf_ip_checksum(oldskb, hook, ip_hdrlen(oldskb), IPPROTO_TCP))
+	if (nf_ip_checksum(oldskb, hook, ip_hdrlen(oldskb), IPPROTO_TCP)) {
+		pr_warn("TCP checksum is invalid\n");
 		return -1;
+	}
 	oiph = ip_hdr(oldskb);
 
 	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct tcphdr) +
@@ -261,9 +271,8 @@ int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	      unsigned char *msg, size_t len)
 {
 #if IS_ENABLED(CONFIG_IPV6)
-	if (oldskb->protocol == htons(ETH_P_IPV6)) {
+	if (oldskb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_reply(oldskb, par, msg, len);
-	}
 #endif
 	return tcp_ipv4_reply(oldskb, par->hooknum, msg, len);
 }
