@@ -4,6 +4,7 @@
 #include <linux/types.h>
 #include <linux/skbuff.h>
 
-int tcp_reply(const struct sk_buff *, int, unsigned char *, size_t);
+int tcp_reply(struct sk_buff *, struct xt_action_param *,
+		unsigned char *, size_t);
 
 #endif

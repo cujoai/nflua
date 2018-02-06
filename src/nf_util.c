@@ -1,6 +1,8 @@
 /* (C) 1999-2001 Paul `Rusty' Russell
+ * (C) 2003 USAGI/WIDE Project, Yasuyuki Kozakai <yasuyuki.kozakai@toshiba.co.jp>
  * (C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
- * (C) 2017      CUJO LLC
+ * (C) 2005-2007 Patrick McHardy <kaber@trash.net>
+ * (C) 2017-2018 CUJO LLC
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 as
@@ -15,8 +17,150 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
 
-int tcp_reply(const struct sk_buff *oldskb, int hook, unsigned char *msg,
-	size_t len)
+#if IS_ENABLED(CONFIG_IPV6)
+#include <net/ip6_route.h>
+#include <linux/netfilter_ipv6/ip6_tables.h>
+
+static int tcp_ipv6_reply(struct sk_buff *oldskb,
+			  struct xt_action_param *par,
+			  unsigned char *msg, size_t len)
+{
+	struct net *net = dev_net((par->in != NULL) ? par->in : par->out);
+	struct sk_buff *nskb;
+	struct tcphdr otcph, *tcph;
+	unsigned int otcplen, hh_len;
+	unsigned char *data;
+	size_t tcplen;
+	int tcphoff;
+	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
+	struct ipv6hdr *ip6h;
+#define DEFAULT_TOS_VALUE	0x0U
+	const __u8 tclass = DEFAULT_TOS_VALUE;
+	struct dst_entry *dst = NULL;
+	u8 proto;
+	__be16 frag_off;
+	struct flowi6 fl6;
+
+	if ((!(ipv6_addr_type(&oip6h->saddr) & IPV6_ADDR_UNICAST)) ||
+	    (!(ipv6_addr_type(&oip6h->daddr) & IPV6_ADDR_UNICAST))) {
+		pr_debug("addr is not unicast.\n");
+		return -1;
+	}
+
+	proto = oip6h->nexthdr;
+	tcphoff = ipv6_skip_exthdr(oldskb, ((u8*)(oip6h+1) - oldskb->data),
+				   &proto, &frag_off);
+
+	if ((tcphoff < 0) || (tcphoff > oldskb->len)) {
+		pr_debug("Cannot get TCP header.\n");
+		return -1;
+	}
+
+	otcplen = oldskb->len - tcphoff;
+
+	/* IP header checks: fragment, too short. */
+	if (proto != IPPROTO_TCP || otcplen < sizeof(struct tcphdr)) {
+		pr_debug("proto(%d) != IPPROTO_TCP, "
+			 "or too short. otcplen = %d\n",
+			 proto, otcplen);
+		return -1;
+	}
+
+	if (skb_copy_bits(oldskb, tcphoff, &otcph, sizeof(struct tcphdr)))
+		BUG();
+
+	/* No reply for RST. */
+	if (otcph.rst) {
+		pr_debug("RST is set\n");
+		return -1;
+	}
+
+	/* Check checksum. */
+	if (csum_ipv6_magic(&oip6h->saddr, &oip6h->daddr, otcplen, IPPROTO_TCP,
+			    skb_checksum(oldskb, tcphoff, otcplen, 0))) {
+		pr_debug("TCP checksum is invalid\n");
+		return -1;
+	}
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_TCP;
+	fl6.saddr = oip6h->daddr;
+	fl6.daddr = oip6h->saddr;
+	fl6.fl6_sport = otcph.dest;
+	fl6.fl6_dport = otcph.source;
+	security_skb_classify_flow(oldskb, flowi6_to_flowi(&fl6));
+	dst = ip6_route_output(net, NULL, &fl6);
+	if (dst == NULL || dst->error) {
+		dst_release(dst);
+		return -1;
+	}
+	dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), NULL, 0);
+	if (IS_ERR(dst)) {
+		return -1;
+	}
+
+	hh_len = (dst->dev->hard_header_len + 15)&~15;
+	nskb = alloc_skb(hh_len + 15 + dst->header_len + sizeof(struct ipv6hdr)
+			 + sizeof(struct tcphdr) + dst->trailer_len + len,
+			 GFP_ATOMIC);
+
+	if (!nskb) {
+		net_dbg_ratelimited("cannot alloc skb\n");
+		dst_release(dst);
+		return -1;
+	}
+
+	skb_dst_set(nskb, dst);
+
+	skb_reserve(nskb, hh_len + dst->header_len);
+
+	skb_put(nskb, sizeof(struct ipv6hdr));
+	skb_reset_network_header(nskb);
+	ip6h = ipv6_hdr(nskb);
+	ip6_flow_hdr(ip6h, tclass, 0);
+	ip6h->hop_limit = ip6_dst_hoplimit(dst);
+	ip6h->nexthdr = IPPROTO_TCP;
+	ip6h->saddr = oip6h->daddr;
+	ip6h->daddr = oip6h->saddr;
+
+	skb_reset_transport_header(nskb);
+	tcph = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
+	/* Truncate to length */
+	tcph->doff = sizeof(struct tcphdr)/4;
+	tcph->source = otcph.dest;
+	tcph->dest = otcph.source;
+
+	tcph->seq = otcph.ack_seq;
+	tcph->ack_seq = htonl(ntohl(otcph.seq) + otcph.syn + otcph.fin
+			      + otcplen - (otcph.doff<<2));
+
+	((u_int8_t *)tcph)[13] = 0;
+	tcph->psh = 1;
+	tcph->ack = 1;
+	tcph->window = 0;
+	tcph->urg_ptr = 0;
+	tcph->check = 0;
+
+	data = skb_put(nskb, len);
+	memcpy(data, msg, len);
+
+	tcplen = nskb->len - sizeof(struct ipv6hdr);
+	/* Adjust TCP checksum */
+	tcph->check = csum_ipv6_magic(&ipv6_hdr(nskb)->saddr,
+				      &ipv6_hdr(nskb)->daddr,
+				      tcplen, IPPROTO_TCP,
+				      csum_partial(tcph, tcplen, 0));
+	nskb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	nf_ct_attach(nskb, oldskb);
+
+	ip6_local_out(nskb);
+	return 0;
+}
+#endif
+
+static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
+			  unsigned char *msg, size_t len)
 {
 	struct sk_buff *nskb;
 	const struct iphdr *oiph;
@@ -113,3 +257,13 @@ int tcp_reply(const struct sk_buff *oldskb, int hook, unsigned char *msg,
 	return -1;
 }
 
+int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
+	      unsigned char *msg, size_t len)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	if (oldskb->protocol == htons(ETH_P_IPV6)) {
+		return tcp_ipv6_reply(oldskb, par, msg, len);
+	}
+#endif
+	return tcp_ipv4_reply(oldskb, par->hooknum, msg, len);
+}

@@ -49,7 +49,7 @@ static DEFINE_KFIFO(touser, const char *, 32);
 static DECLARE_WAIT_QUEUE_HEAD(waitq);
 
 struct nflua_ctx {
-	const struct sk_buff *skb;
+	struct sk_buff *skb;
 	struct xt_action_param *par;
 };
 
@@ -62,7 +62,7 @@ static int nflua_checkentry(const struct xt_mtchk_param *par)
 	return 0;
 }
 
-static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
+static bool nflua_match(struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 	struct nflua_ctx ctx = {.skb = skb, .par = par};
@@ -115,7 +115,7 @@ static int nflua_reply(lua_State *L)
 
 	switch(type[0]) {
 	case 't':
-		if (tcp_reply(ctx->skb, ctx->par->hooknum, msg, len) != 0)
+		if (tcp_reply(ctx->skb, ctx->par, msg, len) != 0)
 			goto error;
 		break;
 	default:
@@ -154,7 +154,7 @@ EXPORT_SYMBOL(luaopen_nf);
 static struct xt_match nflua_mt_reg __read_mostly = {
 	.name       = "lua",
 	.revision   = 0,
-	.family     = NFPROTO_IPV4,
+	.family     = NFPROTO_UNSPEC,
 	.match      = nflua_match,
 	.checkentry = nflua_checkentry,
 	.destroy    = nflua_destroy,
