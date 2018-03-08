@@ -12,7 +12,9 @@
 #include <linux/netfilter/x_tables.h>
 #include <linux/tcp.h>
 #include <linux/inet.h>
+#include <linux/netlink.h>
 #include <net/ip.h>
+#include <net/sock.h>
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -40,13 +42,11 @@ MODULE_DESCRIPTION("Netfilter Lua module");
 
 extern int luaopen_json(lua_State* L);
 
+static struct sock *sock;
+
 static lua_State *L = NULL;
 
 static DEFINE_SPINLOCK(lock);
-
-static DEFINE_KFIFO(touser, const char *, 32);
-
-static DECLARE_WAIT_QUEUE_HEAD(waitq);
 
 struct nflua_ctx {
 	struct sk_buff *skb;
@@ -127,20 +127,38 @@ error:
 	return luaL_error(L, "couldn't reply a packet");
 }
 
-static int nflua_touser(lua_State *L)
+#define nlmsg_send(sock, skb, pid, group) \
+	((group == 0) ? nlmsg_unicast(sock, skb, pid) : \
+		nlmsg_multicast(sock, skb, pid, group, 0))
+
+static int nflua_netlink(lua_State *L)
 {
-	const char *msg = kstrdup(luaL_checkstring(L, 1), GFP_KERNEL);
+	size_t size;
+	const char *payload = luaL_checklstring(L, 1, &size);
+	int pid = luaL_checkinteger(L, 2);
+	int group = luaL_optinteger(L, 3, 0);
+	int flags = luaL_optinteger(L, 4, 0);
+	struct sk_buff *skb = nlmsg_new(size, GFP_KERNEL);
+	struct nlmsghdr *nlh;
 
-	if (msg == NULL || !kfifo_put(&touser, &msg))
-		luaL_error(L, "couldn't enqueue message to user space");
+	if (skb == NULL)
+		luaL_error(L, "insufficient memory");
 
-	wake_up_interruptible(&waitq);
-	return 0;
+	if ((nlh = nlmsg_put(skb, 0, 1, NLMSG_DONE, size, flags)) == NULL)
+		luaL_error(L, "message too long");
+
+	memcpy(nlmsg_data(nlh), payload, size);
+
+	if (nlmsg_send(sock, skb, pid, group) < 0)
+		luaL_error(L, "failed to send message");
+
+	lua_pushinteger(L, (lua_Integer) size);
+	return 1;
 }
 
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
-	{"touser", nflua_touser},
+	{"netlink", nflua_netlink},
 	{NULL, NULL}
 };
 
@@ -162,94 +180,39 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 	.me         = THIS_MODULE
 };
 
-static int nflua_show(struct seq_file *m, void *v)
-{
-	DEFINE_WAIT(wait);
-	struct file *file = m->private;
-	int ret = 0;
-	const char *msg = NULL;
-
-	while (!kfifo_get(&touser, &msg)) {
-		prepare_to_wait(&waitq, &wait, TASK_INTERRUPTIBLE);
-
-		if (signal_pending(current)) {
-			ret = -EINTR;
-			break;
-		}
-
-		if (file->f_flags & O_NONBLOCK) {
-			ret = -EAGAIN;
-			break;
-		}
-
-		schedule();
-	}
-	finish_wait(&waitq, &wait);
-
-	if (msg != NULL) {
-		seq_printf(m, "%s", msg);
-		kfree(msg);
-	}
-
-	return ret;
-}
-
-static int nflua_open(struct inode *inode, struct file *file)
-{
-	return single_open(file, nflua_show, file);
-}
-
 #define nflua_dostring(L, b, s)	\
 	(luaL_loadbufferx(L, b, s, "nf_lua", "t") ||	\
 	 lua_pcall(L, 0, 0, 0))
 
-static ssize_t nflua_write(struct file *file, const char __user *buf,
-		size_t size, loff_t *ppos)
+
+static void nflua_input(struct sk_buff *skb)
 {
-	char *script = NULL;
-	int err_exec = 0;
+	struct nlmsghdr *nlh = nlmsg_hdr(skb);
+	const char* script = (const char *) nlmsg_data(nlh);
 
-	if (size == 0)
-		return 0;
-
-	script = (char *)kmalloc(size, GFP_KERNEL);
-	if (script == NULL)
-		return -ENOMEM;
-
-	if (copy_from_user(script, buf, size) < 0)
-		return -EIO;
+	if (!netlink_net_capable(skb, CAP_NET_ADMIN)) {
+		pr_err("operation not permitted");
+		return;
+	}
 
 	spin_lock_bh(&lock);
 	luaU_setenv(L, NULL, struct nflua_ctx);
 
-	if (nflua_dostring(L, script, size) != 0) {
+	if (nflua_dostring(L, script, nlmsg_len(nlh)) != 0) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		lua_pop(L, 1); /* error */
-		err_exec = -ENOEXEC;
 	}
 	spin_unlock_bh(&lock);
-
-	kfree(script);
-
-	return err_exec ? err_exec : size;
 }
-
-static int nflua_release(struct inode *inode, struct file *file)
-{
-	return single_release(inode, file);
-}
-
-static const struct file_operations nflua_fops = {
-	.owner		= THIS_MODULE,
-	.open		= nflua_open,
-	.read		= seq_read,
-	.write		= nflua_write,
-	.llseek		= seq_lseek,
-	.release	= nflua_release,
-};
 
 static int __init xt_lua_init(void)
 {
+
+	struct netlink_kernel_cfg cfg = {
+		.groups = 0,
+		.input = nflua_input,
+	};
+
 	spin_lock(&lock);
 	L = luaL_newstate();
 
@@ -264,17 +227,15 @@ static int __init xt_lua_init(void)
 	lua_pop(L, 3); /* nf, data, json */
 	spin_unlock(&lock);
 
-	init_waitqueue_head(&waitq);
-
-	proc_create("nf_lua", 0400, NULL, &nflua_fops);
+	sock = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
+	if (sock == NULL)
+		return -ENOMEM;
 
 	return xt_register_match(&nflua_mt_reg);
 }
 
 static void __exit xt_lua_exit(void)
 {
-	const char *msg = NULL;
-
 	spin_lock(&lock);
 	if (L != NULL)
 		lua_close(L);
@@ -282,10 +243,7 @@ static void __exit xt_lua_exit(void)
 	L = NULL;
 	spin_unlock(&lock);
 
-	while (kfifo_get(&touser, &msg))
-		kfree(msg);
-
-	remove_proc_entry("nf_lua", NULL);
+	netlink_kernel_release(sock);
 
 	return xt_unregister_match(&nflua_mt_reg);
 }
