@@ -64,6 +64,31 @@ static int nflua_checkentry(const struct xt_mtchk_param *par)
 	return 0;
 }
 
+int nflua_msghandler (lua_State *L) {
+	const char *msg = lua_tostring(L, 1);
+	if (msg == NULL) {
+		if (luaL_callmeta(L, 1, "__tostring") &&
+		    lua_type(L, -1) == LUA_TSTRING)
+			return 1;
+		else
+			msg = lua_pushfstring(L, "(error object is a %s value)",
+				luaL_typename(L, 1));
+	}
+	luaL_traceback(L, L, msg, 1);
+	return 1;
+}
+
+static int nflua_pcall(lua_State *L, int nargs, int nresults)
+{
+	int status;
+	int base = lua_gettop(L) - nargs;
+	lua_pushcfunction(L, nflua_msghandler);
+	lua_insert(L, base);
+	status = lua_pcall(L, nargs, nresults, base);
+	lua_remove(L, base);
+	return status;
+}
+
 static bool nflua_match(struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
@@ -84,7 +109,7 @@ static bool nflua_match(struct sk_buff *skb, struct xt_action_param *par)
 	frame = ldata_newref(L, skb_mac_header(skb), skb->mac_len);
 	packet = ldata_newref(L, skb->data, skb->len);
 
-	error = lua_pcall(L, 2, 1, 0);
+	error = nflua_pcall(L, 2, 1);
 
 	ldata_unref(L, frame);
 	ldata_unref(L, packet);
@@ -196,7 +221,7 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 
 #define nflua_dostring(L, b, s)	\
 	(luaL_loadbufferx(L, b, s, "nf_lua", "t") ||	\
-	 lua_pcall(L, 0, 0, 0))
+	 nflua_pcall(L, 0, 0))
 
 
 static void nflua_input(struct sk_buff *skb)
