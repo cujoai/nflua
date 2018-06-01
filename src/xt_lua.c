@@ -27,7 +27,6 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
-#include <luautil.h>
 #include <luadata.h>
 
 #include "xt_lua.h"
@@ -39,6 +38,12 @@ MODULE_AUTHOR("Lourival Vieira Neto <lourival.neto@getcujo.com>");
 MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
+
+#define luaU_setenv(L, env, st) { \
+	st **penv = (st **)lua_getextraspace(L); \
+	*penv = env; }
+
+#define luaU_getenv(L, st)	(*((st **)lua_getextraspace(L)))
 
 extern int luaopen_json(lua_State* L);
 
