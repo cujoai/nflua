@@ -219,25 +219,33 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 	.me         = THIS_MODULE
 };
 
-#define nflua_dostring(L, b, s)	\
-	(luaL_loadbufferx(L, b, s, "nf_lua", "t") ||	\
+#define nflua_dostring(L, b, s, n)	\
+	(luaL_loadbufferx(L, b, s, n, "t") ||	\
 	 nflua_pcall(L, 0, 0))
 
 
 static void nflua_input(struct sk_buff *skb)
 {
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
-	const char* script = (const char *) nlmsg_data(nlh);
+	const char *script = (const char *) nlmsg_data(nlh);
+	const char *name = script;
+	int len = nlmsg_len(nlh);
+	int namelen = strnlen(name, len);
 
 	if (!netlink_net_capable(skb, CAP_NET_ADMIN)) {
 		pr_err("operation not permitted");
 		return;
 	}
 
+	if (namelen != len) {
+		script += namelen + 1;
+		len -= namelen + 1;
+	}
+
 	spin_lock_bh(&lock);
 	luaU_setenv(L, NULL, struct nflua_ctx);
 
-	if (nflua_dostring(L, script, nlmsg_len(nlh)) != 0) {
+	if (nflua_dostring(L, script, len, name) != 0) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		lua_pop(L, 1); /* error */
 	}
