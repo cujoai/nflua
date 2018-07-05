@@ -1,0 +1,9 @@
+*.o
+*.mod.o
+*.ko
+.tmp_versions
+.*.cmd
+.*.mk
+modules.order
+Module.symvers
+nflua.mod.c
