@@ -32,7 +32,7 @@
 #include "xt_lua.h"
 #include "nf_util.h"
 
-MODULE_LICENSE("Proprietary. (C) 2017 CUJO LLC.");
+MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Pedro Caldas Tammela <pctammela@getcujo.com>");
 MODULE_AUTHOR("Lourival Vieira Neto <lourival.neto@getcujo.com>");
 MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
@@ -94,10 +94,10 @@ static int nflua_pcall(lua_State *L, int nargs, int nresults)
 	return status;
 }
 
-static bool nflua_match(struct sk_buff *skb, struct xt_action_param *par)
+static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
-	struct nflua_ctx ctx = {.skb = skb, .par = par};
+	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par};
 	bool match = false;
 	int error  = 0;
 	int frame = LUA_NOREF;
