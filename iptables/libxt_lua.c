@@ -8,7 +8,7 @@
 #include <getopt.h>
 
 #include <xtables.h>
-#include <nf_lua/xt_lua.h>
+#include <xt_lua.h>
 
 static void nflua_help(void)
 {

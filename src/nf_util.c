@@ -10,6 +10,7 @@
  */
 #include <linux/slab.h>
 #include <linux/ip.h>
+#include <linux/version.h>
 #include <net/ip.h>
 #include <net/tcp.h>
 #include <net/route.h>
@@ -25,7 +26,11 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			  struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	struct net *net = dev_net((par->state->in != NULL) ? par->state->in : par->state->out);
+#else
 	struct net *net = dev_net((par->in != NULL) ? par->in : par->out);
+#endif
 	struct sk_buff *nskb;
 	struct tcphdr otcph, *tcph;
 	unsigned int otcplen, hh_len;
@@ -154,18 +159,27 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-	ip6_local_out(nskb);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	ip6_local_out(par->state->net, nskb->sk, nskb);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	ip6_local_out(par->net, nskb->sk, nskb);
+#else
+ 	ip6_local_out(nskb);
+#endif	
+
 	return 0;
 }
 #endif
 
-static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
+static int tcp_ipv4_reply(struct sk_buff *oldskb, 
+		          struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
 {
 	struct sk_buff *nskb;
 	const struct iphdr *oiph;
 	struct iphdr *niph;
 	const struct tcphdr *oth;
+	int hook;
 	struct tcphdr _otcph, *tcph;
 	unsigned char *data;
 	size_t tcplen;
@@ -193,6 +207,12 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
 		pr_warn("Not a unicast packet\n");
 		return -1;
 	}
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) 
+	hook = par->state->hook;
+#else
+	hook = par->hooknum;
+#endif
 
 	/* Check checksum */
 	if (nf_ip_checksum(oldskb, hook, ip_hdrlen(oldskb), IPPROTO_TCP)) {
@@ -248,7 +268,13 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	if (ip_route_me_harder(par->state->net, nskb, RTN_UNSPEC))
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	if (ip_route_me_harder(par->net, nskb, RTN_UNSPEC))
+#else
 	if (ip_route_me_harder(nskb, RTN_UNSPEC))
+#endif
 		goto free_nskb;
 
 	niph->ttl	= ip4_dst_hoplimit(skb_dst(nskb));
@@ -259,7 +285,14 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hook,
 
 	nf_ct_attach(nskb, oldskb);
 
-	ip_local_out(nskb);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	ip_local_out(par->state->net, nskb->sk, nskb);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	ip_local_out(par->net, nskb->sk, nskb);
+#else
+ 	ip_local_out(nskb);
+#endif	
+
 	return 0;
 
  free_nskb:
@@ -274,5 +307,5 @@ int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	if (oldskb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_reply(oldskb, par, msg, len);
 #endif
-	return tcp_ipv4_reply(oldskb, par->hooknum, msg, len);
+	return tcp_ipv4_reply(oldskb, par, msg, len);
 }
