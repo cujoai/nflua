@@ -1,12 +1,15 @@
 [submodule "lib/luajson"]
 	path = lib/luajson
 	url = https://github.com/getCUJO/luajson.git
+	branch = master
 [submodule "lib/lunatik"]
 	path = lib/lunatik
 	url = https://github.com/getCUJO/lunatik.git
+	branch = master
 [submodule "lib/luadata"]
 	path = lib/luadata
 	url = https://github.com/lneto/luadata.git
+	branch = master
 [submodule "lib/luabase64"]
 	path = lib/luabase64
 	url = https://github.com/getCUJO/luabase64.git
