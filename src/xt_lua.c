@@ -41,7 +41,7 @@ MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
 MODULE_DESCRIPTION("Netfilter Lua module");
 
 extern int luaopen_json(lua_State* L);
-
+extern int luaopen_timer(lua_State* L);
 extern int luaopen_base64(lua_State* L);
 
 static struct sock *sock;
@@ -272,7 +272,8 @@ static int __init xt_lua_init(void)
 	luaL_requiref(L, "data", luaopen_data, 1);
 	luaL_requiref(L, "json", luaopen_json, 1);
 	luaL_requiref(L, "base64", luaopen_base64, 1);
-	lua_pop(L, 4); /* nf, data, json, base64 */
+	luaL_requiref(L, "timer", luaopen_timer, 1);
+	lua_pop(L, 5); /* nf, data, json, base64, timer */
 	spin_unlock(&lock);
 
 	sock = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
