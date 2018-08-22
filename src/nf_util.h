@@ -6,6 +6,5 @@
 
 int tcp_reply(struct sk_buff *, struct xt_action_param *,
 		unsigned char *, size_t);
-int luaopen_timer(lua_State *);
 
 #endif
