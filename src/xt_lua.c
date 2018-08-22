@@ -178,8 +178,10 @@ static int nflua_netlink(lua_State *L)
 	if (skb == NULL)
 		luaL_error(L, "insufficient memory");
 
-	if ((nlh = nlmsg_put(skb, 0, 1, NLMSG_DONE, size, flags)) == NULL)
+	if ((nlh = nlmsg_put(skb, 0, 1, NLMSG_DONE, size, flags)) == NULL) {
+		kfree_skb(skb);
 		luaL_error(L, "message too long");
+	}
 
 	memcpy(nlmsg_data(nlh), payload, size);
 
