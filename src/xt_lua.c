@@ -347,8 +347,10 @@ static int __init xt_lua_init(void)
 	spin_lock(&lock);
 	L = luaL_newstate();
 
-	if (L == NULL)
+	if (L == NULL) {
+		spin_unlock(&lock);
 		return -ENOMEM;
+	}
 
 	luaL_openlibs(L);
 
