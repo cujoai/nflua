@@ -33,7 +33,7 @@ nflua-objs += lib/luabase64/lbase64.o
 # Compiler and assembly flags
 ccflags-y := -D_KERNEL -I$(src)/lib/lunatik/lua -I$(src)/ -I$(src)/lib/luadata/ \
 	-D'CHAR_BIT=(8)' -D'MIN=min' -D'MAX=max' -D'UCHAR_MAX=(255)' -D'UINT64_MAX=((u64)~0ULL)' \
-	-Dstrtoll=simple_strtoll
+	-Dstrtoll=simple_strtoll $(shell (echo ${KBUILD_SRC} | grep -q arrisxb6) && echo -DCUJO_COMCAST_AXB6)
 
 ifeq ($(ARCH), arm)
 	AFLAGS_setjmp.o := -D_CUJO
