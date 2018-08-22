@@ -2,7 +2,7 @@
 obj-m += nflua.o
 
 # Main code for nflua
-nflua-objs += src/nf_timer.o src/nf_util.o src/xt_lua.o
+nflua-objs += src/nf_util.o src/xt_lua.o
 
 # Lunatik object files
 nflua-objs += lib/lunatik/lua/lapi.o lib/lunatik/lua/lcode.o lib/lunatik/lua/lctype.o \
