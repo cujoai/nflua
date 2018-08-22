@@ -307,13 +307,14 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 
 static void nflua_input(struct sk_buff *skb)
 {
+	struct net *net = sock_net(skb->sk);
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	const char *script = (const char *) nlmsg_data(nlh);
 	const char *name = script;
 	int len = nlmsg_len(nlh);
 	int namelen = strnlen(name, len);
 
-	if (!netlink_net_capable(skb, CAP_NET_ADMIN)) {
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN)) {
 		pr_err("operation not permitted");
 		return;
 	}
