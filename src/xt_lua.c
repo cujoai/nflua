@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/printk.h>
+#include <linux/version.h>
 
 #include <linux/skbuff.h>
 #include <linux/netfilter/x_tables.h>
@@ -180,19 +181,104 @@ static int nflua_netlink(lua_State *L)
 	struct nlmsghdr *nlh;
 
 	if (skb == NULL)
-		luaL_error(L, "insufficient memory");
+		return luaL_error(L, "insufficient memory");
 
 	if ((nlh = nlmsg_put(skb, 0, 1, NLMSG_DONE, size, flags)) == NULL) {
 		kfree_skb(skb);
-		luaL_error(L, "message too long");
+		return luaL_error(L, "message too long");
 	}
 
 	memcpy(nlmsg_data(nlh), payload, size);
 
 	if (nlmsg_send(sock, skb, pid, group) < 0)
-		luaL_error(L, "failed to send message");
+		return luaL_error(L, "failed to send message");
 
 	lua_pushinteger(L, (lua_Integer) size);
+	return 1;
+}
+
+#define NFLUA_SKBUFF  "lskb"
+#define tolskbuff(L) ((struct sk_buff **) luaL_checkudata(L, 1, NFLUA_SKBUFF))
+#define lnewskbuff(L) \
+	((struct sk_buff **) lua_newuserdata(L, sizeof(struct sk_buff *)))
+
+static int nflua_skb_send(lua_State *L)
+{
+	struct sk_buff **lskb = tolskbuff(L);
+	size_t len;
+	unsigned char *payload;
+
+	if (*lskb == NULL)
+		return luaL_error(L, "closed packet");
+
+	payload = (unsigned char *)lua_tolstring(L, 2, &len);
+	if (payload != NULL && tcp_payload(*lskb, payload, len) != 0)
+		return luaL_error(L, "unable to set tcp payload");
+
+	(*lskb)->protocol = htons(ETH_P_IP);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	if (ip_route_me_harder(dev_net(skb_dst(*lskb)->dev), *lskb, RTN_UNSPEC))
+#else
+	if (ip_route_me_harder(*lskb, RTN_UNSPEC))
+#endif
+		return luaL_error(L, "unable to route packet");
+
+	if (tcp_send(*lskb) != 0)
+		return luaL_error(L, "unable to send packet");
+
+	*lskb = NULL;
+	return 0;
+}
+
+static int nflua_getpacket(lua_State *L)
+{
+	struct sk_buff **lskb;
+	struct nflua_ctx *ctx = luaU_getenv(L, struct nflua_ctx);
+
+	if (ctx == NULL)
+		return luaL_error(L, "couldn't get packet");
+
+	lskb = lnewskbuff(L);
+	*lskb = skb_get(ctx->skb);
+	luaL_setmetatable(L, NFLUA_SKBUFF);
+
+	return 1;
+}
+
+static int nflua_skb_free(lua_State *L)
+{
+	struct sk_buff **lskb = tolskbuff(L);
+
+	if (*lskb != NULL) {
+		kfree_skb(*lskb);
+		*lskb = NULL;
+	}
+
+	return 0;
+}
+
+static int nflua_skb_tostring(lua_State *L)
+{
+	struct sk_buff *skb = *tolskbuff(L);
+
+	if (skb == NULL) {
+		lua_pushliteral(L, "packet closed");
+	} else {
+		lua_pushfstring(L,
+			"packet: { len:%d data_len:%d users:%d "
+			"cloned:%d dataref:%d frags:%d }",
+			skb->len,
+			skb->data_len,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0)
+			refcount_read(&skb->users),
+#else
+			atomic_read(&skb->users),
+#endif
+			skb->cloned,
+			atomic_read(&skb_shinfo(skb)->dataref),
+			skb_shinfo(skb)->nr_frags);
+	}
+
 	return 1;
 }
 
@@ -285,11 +371,26 @@ static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
 	{"time", nflua_time},
+	{"getpacket", nflua_getpacket},
+	{NULL, NULL}
+};
+
+static const luaL_Reg nflua_skb_ops[] = {
+	{"send", nflua_skb_send},
+	{"close", nflua_skb_free},
+	{"__gc", nflua_skb_free},
+	{"__tostring", nflua_skb_tostring},
 	{NULL, NULL}
 };
 
 int luaopen_nf(lua_State *L)
 {
+	luaL_newmetatable(L, NFLUA_SKBUFF);
+	lua_pushvalue(L, -1);
+	lua_setfield(L, -2, "__index");
+	luaL_setfuncs(L, nflua_skb_ops, 0);
+	lua_pop(L, 1);
+
 	luaL_newlib(L, nflua_lib);
 	return 1;
 }
@@ -347,6 +448,9 @@ static int __init xt_lua_init(void)
 		.groups = 0,
 		.input = nflua_input,
 	};
+
+	if (nf_util_init() == NULL)
+		return -EFAULT;
 
 	spin_lock(&lock);
 	L = luaL_newstate();
