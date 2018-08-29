@@ -17,6 +17,9 @@
 #include <net/dst.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
+#ifdef MODULE
+#include <linux/kallsyms.h>
+#endif
 
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ip6_route.h>
@@ -308,4 +311,165 @@ int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 		return tcp_ipv6_reply(oldskb, par, msg, len);
 #endif
 	return tcp_ipv4_reply(oldskb, par, msg, len);
+}
+
+#ifdef MODULE
+
+static void (*__ip_forward_options)(struct sk_buff *);
+
+void *nf_util_init(void)
+{
+	return (__ip_forward_options = (void(*)(struct sk_buff*))
+		kallsyms_lookup_name("ip_forward_options"));
+}
+
+#else
+
+#define __ip_forward_options(skb) (ip_forward_options(skb))
+
+void *nf_util_init(void)
+{
+	return NULL;
+}
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+#define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
+#else
+#define __dst_output(skb) (dst_output(skb))
+#endif
+
+int tcp_payload(struct sk_buff *skb, unsigned char *payload, size_t len)
+{
+	struct tcphdr tcph, *tcphp;
+	struct iphdr *iph;
+	unsigned char *data;
+	size_t tcplen;
+
+	/* IPv6 not supported for now */
+	if (skb->protocol == htons(ETH_P_IPV6))
+		return -1;
+
+	/* IP header checks: fragment. */
+	if (ip_hdr(skb)->frag_off & htons(IP_OFFSET))
+		return -1;
+
+	tcphp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(tcph), &tcph);
+	if (tcphp == NULL)
+		return -1;
+
+	skb_trim(skb, ip_hdrlen(skb) + tcphp->doff * 4);
+
+	if (len > skb_tailroom(skb)) {
+		if (pskb_expand_head(skb, 0, len - skb_tailroom(skb),
+		                     GFP_ATOMIC))
+			return -1;
+
+		/* tcphp pointer might have changed if skb was reallocated */
+		tcphp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(tcph),
+		                          &tcph);
+		if (tcphp == NULL)
+			return -1;
+	}
+
+	data = skb_put(skb, len);
+	memcpy(data, payload, len);
+
+	iph = ip_hdr(skb);
+	tcplen = skb->len - ip_hdrlen(skb);
+	tcphp->check = 0;
+	tcphp->check = csum_tcpudp_magic(iph->saddr, iph->daddr,
+	                                 tcplen, IPPROTO_TCP,
+	                                 csum_partial(tcphp, tcplen, 0));
+
+	iph->tot_len = htons(skb->len);
+	ip_send_check(iph);
+
+	return 0;
+}
+
+static bool ip_gso_exceeds_dst_mtu(const struct sk_buff *skb)
+{
+	unsigned int mtu;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,16,0)
+	if (skb->ignore_df || !skb_is_gso(skb))
+#else
+	if (skb->local_df || !skb_is_gso(skb))
+#endif
+		return false;
+
+	mtu = dst_mtu(skb_dst(skb));
+
+	/* if seglen > mtu, do software segmentation for IP fragmentation on
+	 * output.  DF bit cannot be set since ip_forward would have sent
+	 * icmp error.
+	 */
+	return skb_gso_network_seglen(skb) > mtu;
+}
+
+/* called if GSO skb needs to be fragmented on forward */
+static int ip_forward_finish_gso(struct sk_buff *skb)
+{
+	netdev_features_t features;
+	struct sk_buff *segs;
+	int ret = 0;
+
+#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)) && \
+	 (LINUX_VERSION_CODE <= KERNEL_VERSION(3,15,0)))
+	features = netif_skb_dev_features(skb, skb_dst(skb)->dev);
+#else
+	features = netif_skb_features(skb);
+#endif
+	segs = skb_gso_segment(skb, features & ~NETIF_F_GSO_MASK);
+	if (IS_ERR(segs)) {
+		kfree_skb(skb);
+		return -ENOMEM;
+	}
+
+	consume_skb(skb);
+
+	do {
+		struct sk_buff *nskb = segs->next;
+		int err;
+
+		segs->next = NULL;
+		err = __dst_output(segs);
+
+		if (err && ret == 0)
+			ret = err;
+		segs = nskb;
+	} while (segs);
+
+	return ret;
+}
+
+static int ip_forward_finish(struct sk_buff *skb)
+{
+	struct net *net = dev_net(skb_dst(skb)->dev);
+	struct ip_options *opt	= &IPCB(skb)->opt;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,7,0)
+	__IP_INC_STATS(net, IPSTATS_MIB_OUTFORWDATAGRAMS);
+	__IP_ADD_STATS(net, IPSTATS_MIB_OUTOCTETS, skb->len);
+#else
+	IP_INC_STATS_BH(net, IPSTATS_MIB_OUTFORWDATAGRAMS);
+	IP_ADD_STATS_BH(net, IPSTATS_MIB_OUTOCTETS, skb->len);
+#endif
+
+	if (unlikely(opt->optlen))
+		__ip_forward_options(skb);
+
+	if (ip_gso_exceeds_dst_mtu(skb))
+		return ip_forward_finish_gso(skb);
+
+	return __dst_output(skb);
+}
+
+int tcp_send(struct sk_buff *skb)
+{
+	/* IPv6 not supported for now */
+	if (skb->protocol == htons(ETH_P_IPV6))
+		return -1;
+	return ip_forward_finish(skb);
 }
