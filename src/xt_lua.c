@@ -114,7 +114,7 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 		goto out;
 	}
 
-	frame = ldata_newref(L, skb_mac_header(skb), skb->mac_len);
+	frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	packet = ldata_newref(L, skb->data, skb->len);
 
 	error = nflua_pcall(L, 2, 1);
