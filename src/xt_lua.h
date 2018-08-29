@@ -9,9 +9,11 @@
 #include <linux/types.h>
 
 #define XT_LUA_FUNC_SIZE	(1024)
+#define XT_LUA_FUNC_ARG	(0x01)
 
 struct xt_lua_mtinfo {
 	char func[XT_LUA_FUNC_SIZE];
+	__u8 bitmask;
 };
 
 #endif
