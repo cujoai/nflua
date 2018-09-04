@@ -30,7 +30,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			  unsigned char *msg, size_t len)
 {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	struct net *net = dev_net((par->state->in != NULL) ? par->state->in : par->state->out);
+	struct net *net = dev_net((xt_in(par) != NULL) ? xt_in(par) : xt_out(par));
 #else
 	struct net *net = dev_net((par->in != NULL) ? par->in : par->out);
 #endif
@@ -163,7 +163,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	nf_ct_attach(nskb, oldskb);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	ip6_local_out(par->state->net, nskb->sk, nskb);
+	ip6_local_out(xt_net(par), nskb->sk, nskb);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	ip6_local_out(par->net, nskb->sk, nskb);
 #else
@@ -212,7 +212,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	}
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) 
-	hook = par->state->hook;
+	hook = xt_hooknum(par);
 #else
 	hook = par->hooknum;
 #endif
@@ -272,7 +272,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 
 	nskb->protocol = htons(ETH_P_IP);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	if (ip_route_me_harder(par->state->net, nskb, RTN_UNSPEC))
+	if (ip_route_me_harder(xt_net(par), nskb, RTN_UNSPEC))
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	if (ip_route_me_harder(par->net, nskb, RTN_UNSPEC))
 #else
@@ -289,7 +289,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	nf_ct_attach(nskb, oldskb);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	ip_local_out(par->state->net, nskb->sk, nskb);
+	ip_local_out(xt_net(par), nskb->sk, nskb);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	ip_local_out(par->net, nskb->sk, nskb);
 #else
