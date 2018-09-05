@@ -65,6 +65,14 @@ void *nf_util_init(void)
 #endif
 #endif
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
+#define net_dbg_ratelimited(fmt, ...)			\
+	do {						\
+		if (net_ratelimit())			\
+			pr_debug(fmt, ##__VA_ARGS__);	\
+	} while (0)
+#endif
+
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
