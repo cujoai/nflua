@@ -502,10 +502,17 @@ static int __net_init xt_lua_net_init(struct net *net)
 {
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
 	struct sock *sock;
+
+	unsigned int groups = 0;
+	void (*input)(struct sk_buff *skb) = nflua_input;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
 	struct netlink_kernel_cfg cfg = {
-		.groups = 0,
-		.input = nflua_input,
+		.groups = groups,
+		.input = input,
 	};
+#endif
+
 	lua_State *L;
 
 	spin_lock_init(&xt_lua->lock);
@@ -527,7 +534,14 @@ static int __net_init xt_lua_net_init(struct net *net)
 	luaL_requiref(L, "timer", luaopen_timer, 1);
 	lua_pop(L, 5); /* nf, data, json, base64, timer */
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
 	sock = netlink_kernel_create(net, NETLINK_USERSOCK, &cfg);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+	sock = netlink_kernel_create(net, NETLINK_USERSOCK, THIS_MODULE, &cfg);
+#else
+	sock = netlink_kernel_create(net, NETLINK_USERSOCK, groups, input,
+				     NULL, THIS_MODULE);
+#endif
 	if (sock == NULL) {
 		lua_close(L);
 		xt_lua->L = NULL;
