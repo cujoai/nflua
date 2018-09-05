@@ -475,7 +475,12 @@ static void nflua_input(struct sk_buff *skb)
 	int namelen = strnlen(name, len);
 	lua_State *L = xt_lua->L;
 
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN)) {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+#else
+	if (!capable(CAP_NET_ADMIN))
+#endif
+	{
 		pr_err("operation not permitted");
 		return;
 	}
