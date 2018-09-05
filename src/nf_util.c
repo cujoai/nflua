@@ -77,6 +77,14 @@ void *nf_util_init(void)
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
+static inline void ip6_flow_hdr(struct ipv6hdr *hdr, unsigned int tclass,
+				__be32 flowlabel)
+{
+	*(__be32 *)hdr = ntohl(0x60000000 | (tclass << 20)) | flowlabel;
+}
+#endif
+
 static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			  struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
