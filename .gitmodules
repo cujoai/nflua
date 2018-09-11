@@ -14,3 +14,7 @@
 	path = lib/luabase64
 	url = https://github.com/getCUJO/luabase64.git
 	branch = master
+[submodule "lib/lunatik-tests"]
+	path = lib/lunatik-tests
+	url = https://github.com/getCUJO/lunatik-tests.git
+	branch = apfigueiredo_62
