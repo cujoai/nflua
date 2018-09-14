@@ -211,7 +211,6 @@ static int nflua_skb_send(lua_State *L)
 	if (payload != NULL && tcp_payload(*lskb, payload, len) != 0)
 		return luaL_error(L, "unable to set tcp payload");
 
-	(*lskb)->protocol = htons(ETH_P_IP);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	if (ip_route_me_harder(dev_net(skb_dst(*lskb)->dev), *lskb, RTN_UNSPEC))
 #else
