@@ -557,8 +557,8 @@ static int ipv4_forward_finish(struct sk_buff *skb)
 
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)) && \
 	 (LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0)))
-	if (ip_gso_exceeds_dst_mtu(skb))
-		return ip_forward_finish_gso(skb);
+	if (ipv4_gso_exceeds_dst_mtu(skb))
+		return ipv4_forward_finish_gso(skb);
 #endif
 
 	return __dst_output(skb);
