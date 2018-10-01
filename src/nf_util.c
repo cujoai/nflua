@@ -12,6 +12,7 @@
 #include <linux/ip.h>
 #include <linux/version.h>
 #include <net/ip.h>
+#include <net/ip6_checksum.h>
 #include <net/tcp.h>
 #include <net/route.h>
 #include <net/dst.h>
