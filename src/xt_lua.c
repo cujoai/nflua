@@ -204,7 +204,7 @@ static int nflua_netlink(lua_State *L)
 
 static int nflua_skb_send(lua_State *L)
 {
-	struct sk_buff **lskb = tolskbuff(L);
+	struct sk_buff *nskb, **lskb = tolskbuff(L);
 	size_t len;
 	unsigned char *payload;
 
@@ -212,21 +212,36 @@ static int nflua_skb_send(lua_State *L)
 		return luaL_error(L, "closed packet");
 
 	payload = (unsigned char *)lua_tolstring(L, 2, &len);
-	if (payload != NULL && tcp_payload(*lskb, payload, len) != 0)
-		return luaL_error(L, "unable to set tcp payload");
+	if (payload != NULL) {
+		nskb = tcp_payload(*lskb, payload, len);
+		if (nskb == NULL)
+			return luaL_error(L, "unable to set tcp payload");
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	if (ip_route_me_harder(dev_net(skb_dst(*lskb)->dev), *lskb, RTN_UNSPEC))
-#else
-	if (ip_route_me_harder(*lskb, RTN_UNSPEC))
-#endif
-		return luaL_error(L, "unable to route packet");
+		/* Original packet is not needed anymore */
+		kfree_skb(*lskb);
+		*lskb = NULL;
+	} else {
+		if (unlikely(skb_shared(*lskb)))
+			return luaL_error(L, "cannot send a shared skb");
+		nskb = *lskb;
+	}
 
-	if (tcp_send(*lskb) != 0)
-		return luaL_error(L, "unable to send packet");
+	if (route_me_harder(nskb)) {
+		pr_err("unable to route packet");
+		goto error;
+	}
+
+	if (tcp_send(nskb) != 0) {
+		pr_err("unable to send packet");
+		goto error;
+	}
 
 	*lskb = NULL;
 	return 0;
+error:
+	if (*lskb == NULL && nskb != NULL)
+		kfree_skb(nskb);
+	return luaL_error(L, "send packet error");
 }
 
 static int nflua_getpacket(lua_State *L)
