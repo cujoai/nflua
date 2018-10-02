@@ -6,8 +6,9 @@
 
 int tcp_reply(struct sk_buff *, struct xt_action_param *,
 		unsigned char *, size_t);
-int tcp_payload(struct sk_buff *, unsigned char *, size_t);
+struct sk_buff *tcp_payload(struct sk_buff *, unsigned char *, size_t);
 int tcp_send(struct sk_buff *);
+int route_me_harder(struct sk_buff *);
 void *nf_util_init(void);
 
 #endif

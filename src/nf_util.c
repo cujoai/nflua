@@ -40,8 +40,20 @@ void *nf_util_init(void)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 #define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
+#define __ip_route_me_harder(skb) \
+	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC))
+
+#if IS_ENABLED(CONFIG_IPV6)
+#define __ip6_route_me_harder(skb) \
+	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb))
+#endif /* CONFIG_IPV6 */
 #else
 #define __dst_output(skb) (dst_output(skb))
+#define __ip_route_me_harder(skb) (ip_route_me_harder(skb, RTN_UNSPEC))
+
+#if IS_ENABLED(CONFIG_IPV6)
+#define __ip6_route_me_harder(skb) (ip6_route_me_harder(skb))
+#endif /* CONFIG_IPV6 */
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,7,0)
@@ -205,11 +217,12 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	return 0;
 }
 
-static int tcp_ipv6_payload(struct sk_buff *skb,
+static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 		unsigned char *payload, size_t len)
 {
-	struct tcphdr tcph, *tcphp;
-	struct ipv6hdr *ip6h = ipv6_hdr(skb);
+	struct tcphdr tcph, *ntcphp;
+	struct ipv6hdr *nip6h, *ip6h = ipv6_hdr(skb);
+	struct sk_buff *nskb;
 	unsigned char *data;
 	unsigned int otcplen;
 	size_t tcplen;
@@ -220,7 +233,7 @@ static int tcp_ipv6_payload(struct sk_buff *skb,
 	if (!(ipv6_addr_type(&ip6h->saddr) & IPV6_ADDR_UNICAST) ||
 	    !(ipv6_addr_type(&ip6h->daddr) & IPV6_ADDR_UNICAST)) {
 		pr_warn("addr is not unicast.\n");
-		return -1;
+		return NULL;
 	}
 
 	proto = ip6h->nexthdr;
@@ -229,7 +242,7 @@ static int tcp_ipv6_payload(struct sk_buff *skb,
 
 	if (tcphoff < 0 || tcphoff > skb->len) {
 		pr_warn("Cannot get TCP header.\n");
-		return -1;
+		return NULL;
 	}
 
 	otcplen = skb->len - tcphoff;
@@ -238,50 +251,52 @@ static int tcp_ipv6_payload(struct sk_buff *skb,
 	if (proto != IPPROTO_TCP || otcplen < sizeof(struct tcphdr)) {
 		pr_warn("proto(%d) != IPPROTO_TCP, or too short. tcplen = %d\n",
 			 proto, otcplen);
-		return -1;
+		return NULL;
 	}
 
-	tcphp = skb_header_pointer(skb, tcphoff, sizeof(tcph), &tcph);
-	if (tcphp == NULL) {
-		pr_warn("Couldn't get initial TCP header pointer.\n");
-		return -1;
+	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr))) {
+		pr_warn("Could not copy TCP header.\n");
+		return NULL;
 	}
 
-	/* Test if it's linear, if not, try to linearize */
-	if (skb_linearize(skb))
-		return -ENOMEM;
-
-	skb_trim(skb, tcphoff + tcphp->doff * 4);
-
-	if (len > skb_tailroom(skb)) {
-		if (pskb_expand_head(skb, 0, len - skb_tailroom(skb), GFP_ATOMIC)){
-			pr_warn("Couldn't expand sbk head.\n");
-			return -1;
-		}
-
-		/* tcphp pointer might have changed if skb was reallocated */
-		tcphp = skb_header_pointer(skb, tcphoff, sizeof(tcph), &tcph);
-		if (tcphp == NULL){
-			pr_warn("Couldn't get new TCP header pointer.\n");
-			return -1;
-		}
+	nskb = alloc_skb(sizeof(struct ipv6hdr) + sizeof(struct tcphdr) +
+	                 LL_MAX_HEADER + len, GFP_ATOMIC);
+	if (nskb == NULL) {
+		pr_warn("Could not allocate new skb\n");
+		return NULL;
 	}
 
-	data = skb_put(skb, len);
+	nskb->protocol = htons(ETH_P_IPV6);
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_reset_network_header(nskb);
+	nip6h = (struct ipv6hdr*)skb_put(nskb, sizeof(struct ipv6hdr));
+	memcpy(nip6h, ip6h, sizeof(struct ipv6hdr));
+	nip6h->nexthdr = IPPROTO_TCP;
+
+	skb_reset_transport_header(nskb);
+	ntcphp = (struct tcphdr*)skb_put(nskb, sizeof(struct tcphdr));
+	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
+	ntcphp->doff = sizeof(struct tcphdr) / 4;
+
+	data = skb_put(nskb, len);
 	memcpy(data, payload, len);
 
-	ip6h = ipv6_hdr(skb);
-	tcplen = skb->len - tcphoff;
+	tcplen = nskb->len - sizeof(struct ipv6hdr);
 
 	/* Adjust TCP checksum */
-	tcphp->check = 0;
-	tcphp->check = csum_ipv6_magic(&ip6h->saddr, &ip6h->daddr,
+	ntcphp->check = 0;
+	ntcphp->check = csum_ipv6_magic(&nip6h->saddr, &nip6h->daddr,
 				      tcplen, IPPROTO_TCP,
-				      csum_partial(tcphp, tcplen, 0));
+				      csum_partial(ntcphp, tcplen, 0));
 
-	ip6h->payload_len = htons(skb->len);
+	nip6h->payload_len = htons(tcplen);
+	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	return 0;
+	/* ip6_route_me_harder expects skb->dst to be set */
+	skb_dst_set_noref(nskb, skb_dst(skb));
+
+	return nskb;
 }
 
 static int ipv6_forward_finish(struct sk_buff *skb)
@@ -435,57 +450,72 @@ int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	return tcp_ipv4_reply(oldskb, par, msg, len);
 }
 
-static int tcp_ipv4_payload(struct sk_buff *skb,
+static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 		unsigned char *payload, size_t len)
 {
-	struct tcphdr tcph, *tcphp;
-	struct iphdr *iph;
+	struct tcphdr tcph, *ntcphp;
+	struct iphdr *niph;
+	struct sk_buff *nskb;
 	unsigned char *data;
 	size_t tcplen;
+	int tcphoff;
 
 	/* IP header checks: fragment. */
 	if (ip_hdr(skb)->frag_off & htons(IP_OFFSET))
-		return -1;
+		return NULL;
 
-	tcphp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(tcph), &tcph);
-	if (tcphp == NULL)
-		return -1;
-
-	/* Test if it's linear, if not, try to linearize */
-	if(skb_linearize(skb))
-		return -ENOMEM;
-
-	skb_trim(skb, ip_hdrlen(skb) + tcphp->doff * 4);
-
-	if (len > skb_tailroom(skb)) {
-		if (pskb_expand_head(skb, 0, len - skb_tailroom(skb),
-		                     GFP_ATOMIC))
-			return -1;
-
-		/* tcphp pointer might have changed if skb was reallocated */
-		tcphp = skb_header_pointer(skb, ip_hdrlen(skb), sizeof(tcph),
-		                          &tcph);
-		if (tcphp == NULL)
-			return -1;
+	tcphoff = skb_transport_offset(skb);
+	if (tcphoff < 0 || tcphoff >= skb->len) {
+		pr_warn("Cannot get TCP header.\n");
+		return NULL;
 	}
 
-	data = skb_put(skb, len);
+	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr))) {
+		pr_warn("Could not copy TCP header.\n");
+		return NULL;
+	}
+
+	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct tcphdr) +
+	                  LL_MAX_HEADER + len, GFP_ATOMIC);
+	if (nskb == NULL) {
+		pr_warn("Could not allocate new skb\n");
+		return NULL;
+	}
+
+	nskb->protocol = htons(ETH_P_IP);
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_reset_network_header(nskb);
+	niph = (struct iphdr*)skb_put(nskb, sizeof(struct iphdr));
+	memcpy(niph, ip_hdr(skb), sizeof(struct iphdr));
+	niph->ihl = sizeof(struct iphdr) / 4;
+	niph->frag_off = htons(IP_DF);
+
+	skb_reset_transport_header(nskb);
+	ntcphp = (struct tcphdr*)skb_put(nskb, sizeof(struct tcphdr));
+	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
+	ntcphp->doff = sizeof(struct tcphdr) / 4;
+
+	data = skb_put(nskb, len);
 	memcpy(data, payload, len);
 
-	iph = ip_hdr(skb);
-	tcplen = skb->len - ip_hdrlen(skb);
-	tcphp->check = 0;
-	tcphp->check = csum_tcpudp_magic(iph->saddr, iph->daddr,
+	tcplen = nskb->len - ip_hdrlen(nskb);
+	ntcphp->check = 0;
+	ntcphp->check = csum_tcpudp_magic(niph->saddr, niph->daddr,
 	                                 tcplen, IPPROTO_TCP,
-	                                 csum_partial(tcphp, tcplen, 0));
+	                                 csum_partial(ntcphp, tcplen, 0));
 
-	iph->tot_len = htons(skb->len);
-	ip_send_check(iph);
+	niph->tot_len = htons(nskb->len);
+	ip_send_check(niph);
 
-	return 0;
+	/* ip_route_me_harder expects skb->dst to be set */
+	skb_dst_set_noref(nskb, skb_dst(skb));
+
+	return nskb;
 }
 
-int tcp_payload(struct sk_buff *skb, unsigned char *payload, size_t len)
+struct sk_buff *tcp_payload(struct sk_buff *skb,
+                            unsigned char *payload, size_t len)
 {
 #if IS_ENABLED(CONFIG_IPV6)
 	if (skb->protocol == htons(ETH_P_IPV6))
@@ -571,4 +601,13 @@ int tcp_send(struct sk_buff *skb)
 		return ipv6_forward_finish(skb);
 #endif
 	return ipv4_forward_finish(skb);
+}
+
+int route_me_harder(struct sk_buff *skb)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	if (skb->protocol == htons(ETH_P_IPV6))
+		return __ip6_route_me_harder(skb);
+#endif /* CONFIG_IPV6 */
+	return __ip_route_me_harder(skb);
 }
