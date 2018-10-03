@@ -100,7 +100,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	}
 
 	proto = oip6h->nexthdr;
-	tcphoff = ipv6_skip_exthdr(oldskb, ((u8*)(oip6h+1) - oldskb->data),
+	tcphoff = ipv6_skip_exthdr(oldskb, ((u8*)(oip6h + 1) - oldskb->data),
 				   &proto, &frag_off);
 
 	if ((tcphoff < 0) || (tcphoff > oldskb->len)) {
@@ -157,7 +157,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			 GFP_ATOMIC);
 
 	if (!nskb) {
-		net_dbg_ratelimited("cannot alloc skb\n");
+		pr_warn("cannot alloc new skb\n");
 		dst_release(dst);
 		return -1;
 	}
@@ -212,7 +212,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	ip6_local_out(par->net, nskb->sk, nskb);
 #else
  	ip6_local_out(nskb);
-#endif	
+#endif
 
 	return 0;
 }
@@ -237,7 +237,7 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	}
 
 	proto = ip6h->nexthdr;
-	tcphoff = ipv6_skip_exthdr(skb, (u8*)(ip6h+1) - skb->data,
+	tcphoff = ipv6_skip_exthdr(skb, (u8*)(ip6h + 1) - skb->data,
 				   &proto, &frag_off);
 
 	if (tcphoff < 0 || tcphoff > skb->len) {
@@ -348,7 +348,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0) 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
 	hook = xt_hooknum(par);
 #else
 	hook = par->hooknum;
@@ -431,7 +431,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	ip_local_out(par->net, nskb->sk, nskb);
 #else
  	ip_local_out(nskb);
-#endif	
+#endif
 
 	return 0;
 
@@ -577,7 +577,7 @@ static int ipv4_forward_finish_gso(struct sk_buff *skb)
 static int ipv4_forward_finish(struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
-	struct ip_options *opt	= &IPCB(skb)->opt;
+	struct ip_options *opt = &IPCB(skb)->opt;
 
 	__IP_INC_STATS(net, IPSTATS_MIB_OUTFORWDATAGRAMS);
 	__IP_ADD_STATS(net, IPSTATS_MIB_OUTOCTETS, skb->len);
