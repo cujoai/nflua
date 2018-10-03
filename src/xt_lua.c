@@ -72,7 +72,8 @@ static int nflua_checkentry(const struct xt_mtchk_param *par)
 	return 0;
 }
 
-int nflua_msghandler (lua_State *L) {
+int nflua_msghandler(lua_State *L)
+{
 	const char *msg = lua_tostring(L, 1);
 	if (msg == NULL) {
 		if (luaL_callmeta(L, 1, "__tostring") &&
