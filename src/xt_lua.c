@@ -37,6 +37,13 @@
 #include "nf_util.h"
 #include "luautil.h"
 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
+static inline u32 skb_mac_header_len(const struct sk_buff *skb)
+{
+	return skb->network_header - skb->mac_header;
+}
+#endif
+
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Pedro Caldas Tammela <pctammela@getcujo.com>");
 MODULE_AUTHOR("Lourival Vieira Neto <lourival.neto@getcujo.com>");
