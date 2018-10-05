@@ -293,6 +293,8 @@ static int nflua_skb_tostring(lua_State *L)
 	return 1;
 }
 
+#define NFLUA_TIMER "ltimer"
+
 static int nflua_time(lua_State *L)
 {
 	struct timespec ts;
@@ -333,12 +335,14 @@ out:
 
 static int ltimer_create(lua_State *L)
 {
-       struct nftimer_ctx *ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
+       struct nftimer_ctx *ctx;
        unsigned long msecs = luaL_checkinteger(L, 1);
 
        luaL_checktype(L, 2, LUA_TFUNCTION);
 
+       ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
        ctx->L = L;
+       luaL_setmetatable(L, NFLUA_TIMER);
 
        setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
        if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
@@ -352,7 +356,8 @@ static int ltimer_create(lua_State *L)
 
 static int ltimer_destroy(lua_State *L)
 {
-       struct nftimer_ctx *ctx = lua_touserdata(L, 1);
+       struct nftimer_ctx *ctx =
+               (struct nftimer_ctx *) luaL_checkudata(L, 1, NFLUA_TIMER);
        int base = lua_gettop(L);
 
        /* the timer callback has already cleaned the context up */
@@ -372,10 +377,21 @@ static const luaL_Reg timerlib[] = {
        {NULL, NULL}
 };
 
+static const luaL_Reg ltimer_ops[] = {
+	{"__gc", ltimer_destroy},
+	{NULL, NULL}
+};
+
 int luaopen_timer(lua_State *L)
 {
-       luaL_newlib(L, timerlib);
-       return 1;
+	luaL_newmetatable(L, NFLUA_TIMER);
+	lua_pushvalue(L, -1);
+	lua_setfield(L, -2, "__index");
+	luaL_setfuncs(L, ltimer_ops, 0);
+	lua_pop(L, 1);
+
+	luaL_newlib(L, timerlib);
+	return 1;
 }
 
 static const luaL_Reg nflua_lib[] = {
