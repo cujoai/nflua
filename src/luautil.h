@@ -43,6 +43,16 @@
 	(luaL_loadfilex(L, LUAU_PATH f, "t") != 0 || \
 	lua_pcall(L, 0, 0, 0) != 0)
 
+#define luaU_setregval(L, t, v) { \
+	if (v) lua_pushlightuserdata(L, v); \
+	else lua_pushnil(L); \
+	lua_setfield(L, LUA_REGISTRYINDEX, t); }
+
+#define luaU_getregval(L, t, v) { \
+	lua_getfield(L, LUA_REGISTRYINDEX, t); \
+	*v = lua_touserdata(L, -1); \
+	lua_pop(L, 1); }
+
 int luaU_newstream(lua_State *, int, const char *);
 
 #endif /* _LUA_UTIL_H */
