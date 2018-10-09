@@ -16,6 +16,7 @@
 #include <linux/netlink.h>
 #include <net/ip.h>
 #include <net/sock.h>
+#include <net/netns/generic.h>
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -47,12 +48,20 @@ extern int luaopen_json(lua_State* L);
 
 extern int luaopen_base64(lua_State* L);
 
-static struct sock *sock;
+#define NFLUA_SOCK "nflua_sock"
 
-static lua_State *L = NULL;
+static int xt_lua_net_id __read_mostly;
+struct xt_lua_net {
+	lua_State *L;
+	spinlock_t lock;
+};
 
-static DEFINE_SPINLOCK(lock);
+static inline struct xt_lua_net *xt_lua_pernet(struct net *net)
+{
+	return net_generic(net, xt_lua_net_id);
+}
 
+#define NFLUA_CTXENTRY "nflua_ctx"
 struct nflua_ctx {
 	struct sk_buff *skb;
 	struct xt_action_param *par;
@@ -60,7 +69,7 @@ struct nflua_ctx {
 
 struct nftimer_ctx {
        struct timer_list timer;
-       lua_State *L;
+       struct xt_lua_net *xt_lua;
 };
 
 static void nflua_destroy(const struct xt_mtdtor_param *par)
@@ -102,13 +111,15 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par};
+	struct xt_lua_net *xt_lua = xt_lua_pernet(xt_net(par));
+	lua_State *L = xt_lua->L;
 	bool match = false;
 	int error  = 0;
 	int frame = LUA_NOREF;
 	int packet = LUA_NOREF;
 
-	spin_lock(&lock);
-	luaU_setenv(L, &ctx, struct nflua_ctx);
+	spin_lock(&xt_lua->lock);
+	luaU_setregval(L, NFLUA_CTXENTRY, &ctx);
 
 	if (lua_getglobal(L, info->func) != LUA_TFUNCTION) {
 		pr_err("%s: %s\n", "couldn't find match function", info->func);
@@ -132,7 +143,8 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 	match = par->hotdrop ? false : (bool) lua_toboolean(L, -1);
 out:
 	lua_pop(L, 1); /* result, info->func or error */
-	spin_unlock(&lock);
+	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
+	spin_unlock(&xt_lua->lock);
 	return match;
 }
 
@@ -141,8 +153,9 @@ static int nflua_reply(lua_State *L)
 	size_t len;
 	unsigned char *type;
 	unsigned char *msg;
-	struct nflua_ctx *ctx = luaU_getenv(L, struct nflua_ctx);
+	struct nflua_ctx *ctx;
 
+	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
 	if (ctx == NULL)
 		goto error;
 
@@ -174,9 +187,15 @@ static int nflua_netlink(lua_State *L)
 	int pid = luaL_checkinteger(L, 2);
 	int group = luaL_optinteger(L, 3, 0);
 	int flags = luaL_optinteger(L, 4, 0);
-	struct sk_buff *skb = nlmsg_new(size, GFP_KERNEL);
+	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
+	struct sock *sock;
 
+	luaU_getregval(L, NFLUA_SOCK, &sock);
+	if (sock == NULL)
+		return luaL_error(L, "invalid netlink socket");
+
+	skb = nlmsg_new(size, GFP_KERNEL);
 	if (skb == NULL)
 		return luaL_error(L, "insufficient memory");
 
@@ -244,8 +263,9 @@ error:
 static int nflua_getpacket(lua_State *L)
 {
 	struct sk_buff **lskb;
-	struct nflua_ctx *ctx = luaU_getenv(L, struct nflua_ctx);
+	struct nflua_ctx *ctx;
 
+	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet");
 
@@ -309,10 +329,11 @@ static int nflua_time(lua_State *L)
 static void timeout_cb(unsigned long data)
 {
        struct nftimer_ctx *ctx = (struct nftimer_ctx *)data;
-       lua_State *L = ctx->L;
+       struct xt_lua_net *xt_lua = ctx->xt_lua;
+       lua_State *L = xt_lua->L;
        int base;
 
-       spin_lock(&lock);
+       spin_lock(&xt_lua->lock);
        base = lua_gettop(L);
 
        /*
@@ -330,7 +351,7 @@ static void timeout_cb(unsigned long data)
 out:
        luaU_unregisterudata(L, ctx);
        lua_settop(L, base);
-       spin_unlock(&lock);
+       spin_unlock(&xt_lua->lock);
 }
 
 static int ltimer_create(lua_State *L)
@@ -341,7 +362,7 @@ static int ltimer_create(lua_State *L)
        luaL_checktype(L, 2, LUA_TFUNCTION);
 
        ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
-       ctx->L = L;
+       ctx->xt_lua = luaU_getenv(L, struct xt_lua_net);
        luaL_setmetatable(L, NFLUA_TIMER);
 
        setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
@@ -442,11 +463,13 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 static void nflua_input(struct sk_buff *skb)
 {
 	struct net *net = sock_net(skb->sk);
+	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
 	const char *script = (const char *) nlmsg_data(nlh);
 	const char *name = script;
 	int len = nlmsg_len(nlh);
 	int namelen = strnlen(name, len);
+	lua_State *L = xt_lua->L;
 
 	if (!ns_capable(net->user_ns, CAP_NET_ADMIN)) {
 		pr_err("operation not permitted");
@@ -458,35 +481,34 @@ static void nflua_input(struct sk_buff *skb)
 		len -= namelen + 1;
 	}
 
-	spin_lock_bh(&lock);
-	luaU_setenv(L, NULL, struct nflua_ctx);
-
+	spin_lock_bh(&xt_lua->lock);
 	if (nflua_dostring(L, script, len, name) != 0) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		lua_pop(L, 1); /* error */
 	}
-	spin_unlock_bh(&lock);
+	spin_unlock_bh(&xt_lua->lock);
 }
 
-static int __init xt_lua_init(void)
+static int __net_init xt_lua_net_init(struct net *net)
 {
-
+	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
+	struct sock *sock;
 	struct netlink_kernel_cfg cfg = {
 		.groups = 0,
 		.input = nflua_input,
 	};
+	lua_State *L;
 
-	if (nf_util_init() == NULL)
-		return -EFAULT;
+	spin_lock_init(&xt_lua->lock);
 
-	spin_lock(&lock);
-	L = luaL_newstate();
-
+	spin_lock(&xt_lua->lock);
+	xt_lua->L = L = luaL_newstate();
 	if (L == NULL) {
-		spin_unlock(&lock);
+		spin_unlock(&xt_lua->lock);
 		return -ENOMEM;
 	}
 
+	luaU_setenv(L, xt_lua, struct xt_lua_net);
 	luaL_openlibs(L);
 
 	luaL_requiref(L, "nf", luaopen_nf, 1);
@@ -495,27 +517,59 @@ static int __init xt_lua_init(void)
 	luaL_requiref(L, "base64", luaopen_base64, 1);
 	luaL_requiref(L, "timer", luaopen_timer, 1);
 	lua_pop(L, 5); /* nf, data, json, base64, timer */
-	spin_unlock(&lock);
 
-	sock = netlink_kernel_create(&init_net, NETLINK_USERSOCK, &cfg);
+	sock = netlink_kernel_create(net, NETLINK_USERSOCK, &cfg);
 	if (sock == NULL)
 		return -ENOMEM;
+	luaU_setregval(L, NFLUA_SOCK, sock);
+	spin_unlock(&xt_lua->lock);
 
-	return xt_register_match(&nflua_mt_reg);
+	return 0;
+}
+
+static void __net_exit xt_lua_net_exit(struct net *net)
+{
+	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
+	struct sock *sock;
+
+	spin_lock(&xt_lua->lock);
+	if (xt_lua->L != NULL) {
+		luaU_getregval(xt_lua->L, NFLUA_SOCK, &sock);
+		lua_close(xt_lua->L);
+		if (sock != NULL)
+			netlink_kernel_release(sock);
+	}
+	xt_lua->L = NULL;
+	spin_unlock(&xt_lua->lock);
+}
+
+static struct pernet_operations xt_lua_net_ops = {
+	.init = xt_lua_net_init,
+	.exit = xt_lua_net_exit,
+	.id   = &xt_lua_net_id,
+	.size = sizeof(struct xt_lua_net),
+};
+
+static int __init xt_lua_init(void)
+{
+	int ret;
+
+	if (nf_util_init() == NULL)
+		return -EFAULT;
+
+	if ((ret = register_pernet_subsys(&xt_lua_net_ops)))
+		return ret;
+
+	if ((ret = xt_register_match(&nflua_mt_reg)))
+		unregister_pernet_subsys(&xt_lua_net_ops);
+
+	return ret;
 }
 
 static void __exit xt_lua_exit(void)
 {
-	spin_lock(&lock);
-	if (L != NULL)
-		lua_close(L);
-
-	L = NULL;
-	spin_unlock(&lock);
-
-	netlink_kernel_release(sock);
-
-	return xt_unregister_match(&nflua_mt_reg);
+	xt_unregister_match(&nflua_mt_reg);
+	unregister_pernet_subsys(&xt_lua_net_ops);
 }
 
 module_init(xt_lua_init);
