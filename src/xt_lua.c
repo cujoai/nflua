@@ -523,8 +523,11 @@ static int __net_init xt_lua_net_init(struct net *net)
 	lua_pop(L, 5); /* nf, data, json, base64, timer */
 
 	sock = netlink_kernel_create(net, NETLINK_USERSOCK, &cfg);
-	if (sock == NULL)
+	if (sock == NULL) {
+		lua_close(L);
+		xt_lua->L = NULL;
 		return -ENOMEM;
+	}
 	luaU_setregval(L, NFLUA_SOCK, sock);
 	spin_unlock(&xt_lua->lock);
 
