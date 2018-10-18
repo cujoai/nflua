@@ -283,12 +283,12 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	skb_reserve(nskb, LL_MAX_HEADER);
 
 	skb_reset_network_header(nskb);
-	nip6h = (struct ipv6hdr*)skb_put(nskb, sizeof(struct ipv6hdr));
+	nip6h = (struct ipv6hdr *)skb_put(nskb, sizeof(struct ipv6hdr));
 	memcpy(nip6h, ip6h, sizeof(struct ipv6hdr));
 	nip6h->nexthdr = IPPROTO_TCP;
 
 	skb_reset_transport_header(nskb);
-	ntcphp = (struct tcphdr*)skb_put(nskb, sizeof(struct tcphdr));
+	ntcphp = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
 	ntcphp->doff = sizeof(struct tcphdr) / 4;
 
@@ -495,13 +495,13 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	skb_reserve(nskb, LL_MAX_HEADER);
 
 	skb_reset_network_header(nskb);
-	niph = (struct iphdr*)skb_put(nskb, sizeof(struct iphdr));
+	niph = (struct iphdr *)skb_put(nskb, sizeof(struct iphdr));
 	memcpy(niph, ip_hdr(skb), sizeof(struct iphdr));
 	niph->ihl = sizeof(struct iphdr) / 4;
 	niph->frag_off = htons(IP_DF);
 
 	skb_reset_transport_header(nskb);
-	ntcphp = (struct tcphdr*)skb_put(nskb, sizeof(struct tcphdr));
+	ntcphp = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
 	ntcphp->doff = sizeof(struct tcphdr) / 4;
 
