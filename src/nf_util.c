@@ -39,6 +39,8 @@ void *nf_util_init(void)
 }
 #endif
 
+#include "nf_util.h"
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 #define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
 #define __ip_route_me_harder(skb) \
@@ -90,11 +92,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			  struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	struct net *net = dev_net((xt_in(par) != NULL) ? xt_in(par) : xt_out(par));
-#else
-	struct net *net = dev_net((par->in != NULL) ? par->in : par->out);
-#endif
+	struct net *net = xt_net(par);
 	struct sk_buff *nskb;
 	struct tcphdr otcph, *tcph;
 	unsigned int otcplen, hh_len;
@@ -223,10 +221,8 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	ip6_local_out(xt_net(par), nskb->sk, nskb);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip6_local_out(par->net, nskb->sk, nskb);
 #else
  	ip6_local_out(nskb);
 #endif
@@ -425,10 +421,8 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	if (ip_route_me_harder(xt_net(par), nskb, RTN_UNSPEC))
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	if (ip_route_me_harder(par->net, nskb, RTN_UNSPEC))
 #else
 	if (ip_route_me_harder(nskb, RTN_UNSPEC))
 #endif
@@ -442,10 +436,8 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 	ip_local_out(xt_net(par), nskb->sk, nskb);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip_local_out(par->net, nskb->sk, nskb);
 #else
  	ip_local_out(nskb);
 #endif
