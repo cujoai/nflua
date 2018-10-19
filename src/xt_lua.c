@@ -116,9 +116,16 @@ static int nflua_pcall(lua_State *L, int nargs, int nresults)
 
 static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	struct net *net = xt_net(par);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
+	struct net *net = par->net;
+#else
+	struct net *net = dev_net((par->in != NULL) ? par->in : par->out);
+#endif
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par};
-	struct xt_lua_net *xt_lua = xt_lua_pernet(xt_net(par));
+	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
 	lua_State *L = xt_lua->L;
 	bool match = false;
 	int error  = 0;
