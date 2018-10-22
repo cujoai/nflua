@@ -6,10 +6,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
-#include <xtables.h>
 #include <xt_lua.h>
-#include <linux/netfilter_bridge/ebt_ip.h>
-#include <linux/types.h>
 #include "../include/ebtables_u.h"
 
 static void nflua_help(void)
