@@ -284,10 +284,12 @@ static int nflua_getpacket(lua_State *L)
 
 	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
 	if (ctx == NULL)
-		return luaL_error(L, "couldn't get packet");
+		return luaL_error(L, "couldn't get packet context");
 
 	lskb = lnewskbuff(L);
-	*lskb = skb_get(ctx->skb);
+	*lskb = skb_copy(ctx->skb, GFP_ATOMIC);
+	if (*lskb == NULL)
+		return luaL_error(L, "couldn't copy packet");
 	luaL_setmetatable(L, NFLUA_SKBUFF);
 
 	return 1;
