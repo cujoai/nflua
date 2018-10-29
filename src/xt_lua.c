@@ -151,8 +151,7 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 		goto out;
 	}
 
-	par->hotdrop = (bool) lua_isnil(L, -1); /* cache miss? */
-	match = par->hotdrop ? false : (bool) lua_toboolean(L, -1);
+	match = (bool) lua_toboolean(L, -1);
 out:
 	lua_pop(L, 1); /* result, info->func or error */
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
