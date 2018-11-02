@@ -1,0 +1,4 @@
+ccflags-y += -D_KERNEL
+
+obj-$(CONFIG_NFLUA) += nflua.o
+nflua-objs += nf_util.o xt_lua.o
