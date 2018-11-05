@@ -17,6 +17,7 @@
 #include <net/ip.h>
 #include <net/sock.h>
 #include <net/netns/generic.h>
+#include <net/netfilter/nf_conntrack.h>
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -437,11 +438,28 @@ int luaopen_timer(lua_State *L)
 	return 1;
 }
 
+int nflua_connid(lua_State *L)
+{
+	struct nflua_ctx *ctx;
+	enum ip_conntrack_info info;
+	struct nf_conn *conn;
+
+	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	if (ctx == NULL)
+		return luaL_error(L, "couldn't get packet context");
+
+	conn = nf_ct_get(ctx->skb, &info);
+	lua_pushlightuserdata(L, conn);
+
+	return 1;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
 	{"time", nflua_time},
 	{"getpacket", nflua_getpacket},
+	{"connid", nflua_connid},
 	{NULL, NULL}
 };
 
