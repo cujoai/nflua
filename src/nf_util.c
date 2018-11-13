@@ -23,19 +23,19 @@
 
 static void (*__ip_forward_options)(struct sk_buff *);
 
-void *nf_util_init(void)
+bool nf_util_init(void)
 {
 	return (__ip_forward_options = (void(*)(struct sk_buff*))
-		kallsyms_lookup_name("ip_forward_options"));
+		kallsyms_lookup_name("ip_forward_options")) != NULL;
 }
 
 #else
 
 #define __ip_forward_options(skb) (ip_forward_options(skb))
 
-void *nf_util_init(void)
+bool nf_util_init(void)
 {
-	return NULL;
+	return true;
 }
 #endif
 
