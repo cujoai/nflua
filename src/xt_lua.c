@@ -341,9 +341,8 @@ static int nflua_time(lua_State *L)
 	return 2;
 }
 
-static void timeout_cb(unsigned long data)
+static void __timeout_cb(struct nftimer_ctx *ctx)
 {
-       struct nftimer_ctx *ctx = (struct nftimer_ctx *)data;
        struct xt_lua_net *xt_lua = ctx->xt_lua;
        int base;
 
@@ -373,6 +372,18 @@ out2:
        spin_unlock(&xt_lua->lock);
 }
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
+static void timeout_cb(struct timer_list *t)
+{
+       __timeout_cb(from_timer(ctx, t, timer));
+}
+#else
+static void timeout_cb(unsigned long data)
+{
+       __timeout_cb((struct nftimer_ctx *)data);
+}
+#endif
+
 static int ltimer_create(lua_State *L)
 {
        struct nftimer_ctx *ctx;
@@ -384,7 +395,11 @@ static int ltimer_create(lua_State *L)
        ctx->xt_lua = luaU_getenv(L, struct xt_lua_net);
        luaL_setmetatable(L, NFLUA_TIMER);
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
+       timer_setup(&ctx->timer, timeout_cb, 0);
+#else
        setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
+#endif
        if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
                return luaL_error(L, "error setting timer");
 
