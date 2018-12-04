@@ -2,7 +2,7 @@
  * This file is Confidential Information of CUJO LLC.
  * Copyright (c) 2016-2017 CUJO LLC. All rights reserved.
  */
- 
+
 #define LUAU_PATH      LIBEXEC_PATH "/cujo/lua"
 
 
@@ -52,7 +52,5 @@
 	lua_getfield(L, LUA_REGISTRYINDEX, t); \
 	*v = lua_touserdata(L, -1); \
 	lua_pop(L, 1); }
-
-int luaU_newstream(lua_State *, int, const char *);
 
 #endif /* _LUA_UTIL_H */
