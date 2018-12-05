@@ -69,6 +69,7 @@ static inline struct xt_lua_net *xt_lua_pernet(struct net *net)
 	return net_generic(net, xt_lua_net_id);
 }
 
+#define NFLUA_SKBCLONE "nflua_skbclone"
 #define NFLUA_CTXENTRY "nflua_ctx"
 struct nflua_ctx {
 	struct sk_buff *skb;
@@ -155,6 +156,7 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 	match = (bool) lua_toboolean(L, -1);
 out:
 	lua_pop(L, 1); /* result, info->func or error */
+	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
 out2:
 	spin_unlock(&xt_lua->lock);
@@ -282,11 +284,16 @@ static int nflua_getpacket(lua_State *L)
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
 
-	lskb = lnewskbuff(L);
-	*lskb = skb_copy(ctx->skb, GFP_ATOMIC);
-	if (*lskb == NULL)
-		return luaL_error(L, "couldn't copy packet");
-	luaL_setmetatable(L, NFLUA_SKBUFF);
+	lua_getfield(L, LUA_REGISTRYINDEX, NFLUA_SKBCLONE);
+	if (!lua_isuserdata(L, -1)) {
+		lskb = lnewskbuff(L);
+		if ((*lskb = skb_copy(ctx->skb, GFP_ATOMIC)) == NULL)
+			return luaL_error(L, "couldn't copy packet");
+
+		luaL_setmetatable(L, NFLUA_SKBUFF);
+		lua_pushvalue(L, -1);
+		lua_setfield(L, LUA_REGISTRYINDEX, NFLUA_SKBCLONE);
+	}
 
 	return 1;
 }
