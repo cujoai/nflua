@@ -382,7 +382,8 @@ out2:
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
 static void timeout_cb(struct timer_list *t)
 {
-       __timeout_cb(from_timer(ctx, t, timer));
+       struct nftimer_ctx *ctx = from_timer(ctx, t, timer);
+       __timeout_cb(ctx);
 }
 #else
 static void timeout_cb(unsigned long data)
