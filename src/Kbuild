@@ -1,4 +1,5 @@
+# Add -DDEBUG to the line below to increment nflua output
 ccflags-y += -D_KERNEL
 
 obj-$(CONFIG_NFLUA) += nflua.o
-nflua-objs += nf_util.o xt_lua.o
+nflua-objs += nf_util.o luautil.o luanf.o luatimer.o states.o netlink.o xt_lua.o

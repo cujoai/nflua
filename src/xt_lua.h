@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 CUJO LLC
+ * Copyright (C) 2017-2019 CUJO LLC
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -21,17 +21,50 @@
 
 #include <linux/types.h>
 
-#define XT_LUA_FUNC_SIZE	(1024)
+#define XT_LUA_STATENAME_SIZE	(64)
+#define XT_LUA_FUNCNAME_SIZE	(64)
 
-#define NETLINK_NFLUA      	31     /* NFLua netlink protocol family */
+struct nflua_state;
 
 enum {
 	XT_NFLUA_TCP_PAYLOAD = 0x01
 };
 
 struct xt_lua_mtinfo {
-	char func[XT_LUA_FUNC_SIZE];
+	char name[XT_LUA_STATENAME_SIZE];
+	char func[XT_LUA_FUNCNAME_SIZE];
 	__u8 flags;
+
+	/* kernel only */
+	struct nflua_state *state  __attribute__((aligned(8)));
 };
+
+#if defined(__KERNEL__)
+#include <linux/idr.h>
+
+#define XT_LUA_HASH_BUCKETS (32)
+
+struct sock;
+struct xt_lua_net {
+	struct sock *sock;
+	spinlock_t client_lock;
+	spinlock_t state_lock;
+	struct ida ida;
+	struct hlist_head client_table[XT_LUA_HASH_BUCKETS];
+	struct hlist_head state_table[XT_LUA_HASH_BUCKETS];
+};
+
+struct net;
+struct xt_lua_net *xt_lua_pernet(struct net *net);
+
+#define NFLUA_SKBCLONE "nflua_skbclone"
+#define NFLUA_CTXENTRY "nflua_ctx"
+struct nflua_ctx {
+	struct sk_buff *skb;
+	struct xt_action_param *par;
+	int frame;
+	int packet;
+};
+#endif /* __KERNEL__ */
 
 #endif

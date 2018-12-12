@@ -16,30 +16,30 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef _NF_UTIL_H
-#define _NF_UTIL_H
+#include "luautil.h"
 
-#include <linux/types.h>
-#include <linux/skbuff.h>
-#include <linux/netfilter/x_tables.h>
-
-int tcp_reply(struct sk_buff *, struct xt_action_param *,
-		unsigned char *, size_t);
-struct sk_buff *tcp_payload(struct sk_buff *, unsigned char *, size_t);
-int tcp_send(struct sk_buff *);
-int tcp_payload_length(const struct sk_buff *);
-int route_me_harder(struct sk_buff *);
-bool nf_util_init(void);
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
-static inline struct net *xt_net(const struct xt_action_param *par)
+static int msghandler(lua_State *L)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	return par->net;
-#else
-	return dev_net((par->in != NULL) ? par->in : par->out);
-#endif /* KERNEL_VERSION(4,4,0) */
+	const char *msg = lua_tostring(L, 1);
+	if (msg == NULL) {
+		if (luaL_callmeta(L, 1, "__tostring") &&
+		    lua_type(L, -1) == LUA_TSTRING)
+			return 1;
+		else
+			msg = lua_pushfstring(L, "(error object is a %s value)",
+				luaL_typename(L, 1));
+	}
+	luaL_traceback(L, L, msg, 1);
+	return 1;
 }
-#endif /* KERNEL_VERSION(4,10,0) */
 
-#endif /* _NF_UTIL_H */
+int luaU_pcall(lua_State *L, int nargs, int nresults)
+{
+	int status;
+	int base = lua_gettop(L) - nargs;
+	lua_pushcfunction(L, msghandler);
+	lua_insert(L, base);
+	status = lua_pcall(L, nargs, nresults, base);
+	lua_remove(L, base);
+	return status;
+}

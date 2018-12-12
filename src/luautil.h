@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2018 CUJO LLC
+ * Copyright (C) 2017-2019 CUJO LLC
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -18,6 +18,9 @@
 
 #ifndef _LUA_UTIL_H
 #define _LUA_UTIL_H
+
+#include <lua.h>
+#include <lauxlib.h>
 
 #define luaU_getudata(L, ud) \
 	(lua_rawgetp(L, LUA_REGISTRYINDEX, (void *)ud) == LUA_TUSERDATA)
@@ -49,10 +52,6 @@
 #define luaU_getuvalue(L, ud, t) \
 	(luaU_getudata(L, ud) && lua_getuservalue(L, -1) == t)
 
-#define luaU_dofile(L, f) \
-	(luaL_loadfilex(L, LUAU_PATH f, "t") != 0 || \
-	lua_pcall(L, 0, 0, 0) != 0)
-
 #define luaU_setregval(L, t, v) { \
 	if (v) lua_pushlightuserdata(L, v); \
 	else lua_pushnil(L); \
@@ -62,5 +61,11 @@
 	lua_getfield(L, LUA_REGISTRYINDEX, t); \
 	*v = lua_touserdata(L, -1); \
 	lua_pop(L, 1); }
+
+#define luaU_dostring(L, b, s, n)	\
+	(luaL_loadbufferx(L, b, s, n, "t") ||	\
+	 luaU_pcall(L, 0, 0))
+
+int luaU_pcall(lua_State *L, int nargs, int nresults);
 
 #endif /* _LUA_UTIL_H */
