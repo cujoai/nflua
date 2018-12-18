@@ -78,6 +78,11 @@ static inline int nflua_control_getpid(const struct nflua_control *ctrl)
     return ctrl->pid;
 }
 
+static inline int nflua_control_is_open(const struct nflua_control *ctrl)
+{
+    return ctrl->fd >= 0;
+}
+
 int nflua_control_init(struct nflua_control *ctrl, uint32_t pid);
 
 void nflua_control_close(struct nflua_control *ctrl);
@@ -102,6 +107,11 @@ static inline int nflua_data_getsock(const struct nflua_data *dch)
 static inline int nflua_data_getpid(const struct nflua_data *dch)
 {
     return dch->pid;
+}
+
+static inline int nflua_data_is_open(const struct nflua_data *dch)
+{
+    return dch->fd >= 0;
 }
 
 int nflua_data_init(struct nflua_data *dch, uint32_t pid);
