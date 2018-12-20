@@ -1,67 +1,90 @@
 --
--- This file is Confidential Information of Cujo LLC.
--- Copyright (c) 2018 CUJO LLC. All rights reserved.
+-- Copyright (C) 2019 CUJO LLC
 --
-local socket = require'socket.core'
+-- This program is free software; you can redistribute it and/or
+-- modify it under the terms of the GNU General Public License
+-- as published by the Free Software Foundation; either version 2
+-- of the License, or (at your option) any later version.
+--
+-- This program is distributed in the hope that it will be useful,
+-- but WITHOUT ANY WARRANTY; without even the implied warranty of
+-- MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+-- GNU General Public License for more details.
+--
+-- You should have received a copy of the GNU General Public License
+-- along with this program; if not, write to the Free Software
+-- Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+--
 
-local KERNEL_PORT = 0
-local NETLINK_NFLUA = 31
+local nflua = require'nflua'
+local data = require'data'
 
-function nfdofile(path)
-	assert(path ~= nil, 'path argument is mandatory')
+local usage = string.format([[
+usage: lua %s <command> [<args>]
+Available commands:
+  create <state> [maxalloc]
+  destroy <state>
+  list
+  execute <state> (<file> | -e <expression>)
+  send <state> [pid]
+  receive <pid>]], arg[0])
 
-	local file = assert(io.open(path))
-	local code = assert(file:read('a'))
-	file:close()
-
-	assert(socket.netlink(NETLINK_NFLUA):sendto(path .. '\0' .. code, KERNEL_PORT))
+local function abort(err)
+	io.stderr:write('error: ', tostring(err), '\n')
+	os.exit(1)
 end
 
-function printusage()
-	local lines = {
-		"usage: lua nfluaclt.lua [options] [script [args]]",
-		"Available options are:",
-		"  -e stat  execute string 'stat'",
-		"  -h       print this message",
-		"  --       stop handling options",
-	}
-	print(table.concat(lines, '\n'))
+local function check(ok, ...)
+	if not ok then abort(...) end
+	return ok, ...
 end
 
-local options = {
-	['-e'] = function(code)
-		assert(code ~= nil, 'code argument is mandatory')
-		assert(socket.netlink(NETLINK_NFLUA):sendto(code, KERNEL_PORT))
-		return 1
-	end,
-	['-h'] = function()
-		printusage()
-		os.exit(0)
-		return 0
-	end,
-}
+local function ccall(...)
+	return check(select(2, check(pcall(...))))
+end
 
-function handleoptions(...)
-	local i = 1
-	while select(i, ...) ~= nil do
-		local option = select(i, ...)
-		if option == '--' then
-			i = i + 1
-			break
-		end
-		if not (option:sub(1,1) == '-') then break end
+local function run(cmd, ...)
+	local s = nflua.control()
+	ccall(s[cmd], s, ...)
+	local r, err
+	repeat r, err = s:receive() until err ~= 'pending'
+	check(r, err)
+	s:close()
+	return r
+end
 
-		local handler = options[option]
-		if handler == nil then
-			print(arg[0] .. string.format(": unrecognized option '%s'", option))
-			printusage()
-			os.exit(1)
-		end
-		local shiftcount = handler(select(i + 1, ...))
-		i = i + 1 + shiftcount
+if arg[1] == '-h' or arg[1] == '--help' then
+	print(usage)
+elseif arg[1] == 'create' then
+	run('create', table.unpack(arg, 2, 3))
+elseif arg[1] == 'destroy' then
+	run('destroy', table.unpack(arg, 2, 2))
+elseif arg[1] == 'list' then
+	local states = run('list')
+	print'name\t\tmaxalloc'
+	for _, state in ipairs(states) do
+		print(string.format('%-16s%-16d', state.name, state.maxalloc))
 	end
-	return i
+elseif arg[1] == 'execute' then
+	local code
+	if arg[3] == '-e' then
+		code = arg[4]
+	else
+		local f = check(io.open(arg[3], 'r'))
+		code = check(f:read'a')
+		f:close()
+	end
+	run('execute', arg[2], code)
+elseif arg[1] == 'send' then
+	local s = ccall(nflua.data, tonumber(arg[3]))
+	local state = arg[2]
+	local buffer = data.new(io.read'a')
+	ccall(s.send, s, state, buffer)
+	s:close()
+elseif arg[1] == 'receive' then
+	local pid = check(arg[2], 'missing pid')
+	local s = ccall(nflua.data, tonumber(pid))
+	while true do print(tostring(ccall(s.receive, s))) end
+else
+	abort('unknown option ' .. tostring(arg[1]) .. '\n' .. usage)
 end
-
-local argindex = handleoptions(...)
-if select(argindex, ...) ~= nil then nfdofile(select(argindex, ...)) end
