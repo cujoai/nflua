@@ -501,20 +501,17 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	struct sk_buff *nskb;
 	unsigned char *data;
 	size_t tcplen;
-	int tcphoff;
+	const struct tcphdr *oth;
 
 	/* IP header checks: fragment. */
 	if (ip_hdr(skb)->frag_off & htons(IP_OFFSET))
 		return NULL;
 
-	tcphoff = skb_transport_offset(skb);
-	if (tcphoff < 0 || tcphoff >= skb->len) {
-		pr_warn("Cannot get TCP header.\n");
-		return NULL;
-	}
+	oth = skb_header_pointer(skb, ip_hdrlen(skb),
+				 sizeof(tcph), &tcph);
 
-	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr))) {
-		pr_warn("Could not copy TCP header.\n");
+	if (oth == NULL) {
+		pr_warn("Cannot get TCP header.\n");
 		return NULL;
 	}
 
@@ -536,7 +533,7 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 
 	skb_reset_transport_header(nskb);
 	ntcphp = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
-	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
+	memcpy(ntcphp, oth, sizeof(struct tcphdr));
 	ntcphp->doff = sizeof(struct tcphdr) / 4;
 
 	data = skb_put(nskb, len);
