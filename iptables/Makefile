@@ -19,7 +19,7 @@ CFLAGS = -fPIC -Wall -Wextra -O2 -g -I../src
 LDFLAGS = -shared -lxtables
 RM = rm -f
 
-LIBS = libxt_lua.so
+LIBS = libxt_lua.so libxt_LUA.so
 OBJS = $(patsubst %.c,%.o,$(wildcard *.c))
 DEPS = $(OBJS:.o=.d)
 
@@ -39,3 +39,4 @@ clean:
 	$(RM) $(LIBS) $(OBJS) $(DEPS)
 
 libxt_lua.so: libxt_lua.o
+libxt_LUA.so: libxt_LUA.o

@@ -56,7 +56,7 @@ struct xt_lua_net *xt_lua_pernet(struct net *net)
 	return net_generic(net, xt_lua_net_id);
 }
 
-static void nflua_destroy(const struct xt_mtdtor_param *par)
+static void nflua_mt_destroy(const struct xt_mtdtor_param *par)
 {
 	struct xt_lua_mtinfo *info = par->matchinfo;
 
@@ -64,7 +64,7 @@ static void nflua_destroy(const struct xt_mtdtor_param *par)
 		nflua_state_put(info->state);
 }
 
-static int nflua_checkentry(const struct xt_mtchk_param *par)
+static int nflua_mt_checkentry(const struct xt_mtchk_param *par)
 {
 	struct xt_lua_mtinfo *info = par->matchinfo;
 	struct nflua_state *s;
@@ -76,7 +76,7 @@ static int nflua_checkentry(const struct xt_mtchk_param *par)
 	return 0;
 }
 
-static int nflua_domatch(lua_State *L)
+static int nflua_docall(lua_State *L)
 {
 	struct nflua_ctx *ctx = lua_touserdata(L, 1);
 	struct sk_buff *skb = ctx->skb;
@@ -84,10 +84,9 @@ static int nflua_domatch(lua_State *L)
 	int error;
 
 	luaU_setregval(L, NFLUA_CTXENTRY, ctx);
-	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
 
 	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
-		return luaL_error(L, "couldn't find match function: %s\n", info->func);
+		return luaL_error(L, "couldn't find function: %s\n", info->func);
 
 	if (skb_linearize(skb) != 0)
 		return luaL_error(L, "skb linearization failed.\n");
@@ -95,10 +94,10 @@ static int nflua_domatch(lua_State *L)
 	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
 
-	error =  lua_pcall(L, 2, 1, 0);
+	error = lua_pcall(L, 2, 1, 0);
 
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
-	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
+	if (ctx->lskb) luaU_unregisterudata(L, ctx->lskb);
 
 	if (error)
 		return lua_error(L);
@@ -106,17 +105,53 @@ static int nflua_domatch(lua_State *L)
 	return 1;
 }
 
-static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
+static unsigned int string_to_tg(const char *s)
+{
+	struct target_pair {
+		const char *k;
+		int v;
+	};
+	static struct target_pair targets[] = {
+		{"drop", NF_DROP},
+		{"accept", NF_ACCEPT},
+		{"stolen", NF_STOLEN},
+		{"queue", NF_QUEUE},
+		{"repeat", NF_REPEAT},
+		{"stop", NF_STOP}
+	};
+	int i;
+
+	for (i = 0; i < sizeof(targets) / sizeof(*targets); i++)
+		if (strcmp(targets[i].k, s) == 0)
+			return targets[i].v;
+
+	return XT_CONTINUE;
+}
+
+union call_result {
+	bool mt;
+	unsigned int tg;
+};
+
+static union call_result nflua_call(struct sk_buff *skb,
+    struct xt_action_param *par, int mode)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
-	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par,
-		.frame = LUA_NOREF, .packet = LUA_NOREF};
+	struct nflua_ctx ctx = {.skb = skb, .par = par,
+		.frame = LUA_NOREF, .packet = LUA_NOREF,
+		.mode = mode, .lskb = NULL};
 	lua_State *L = info->state->L;
-	bool match = false;
+	union call_result r;
 	int base;
 
-	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) && tcp_payload_length(skb) <= 0)
-		return match;
+	switch (mode) {
+	case NFLUA_MATCH:
+		r.mt = false;
+		break;
+	case NFLUA_TARGET:
+		r.tg = XT_CONTINUE;
+		break;
+	}
 
 	spin_lock(&info->state->lock);
 	if (L == NULL) {
@@ -125,23 +160,76 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 	}
 
 	base = lua_gettop(L);
-	lua_pushcfunction(L, nflua_domatch);
-	lua_pushlightuserdata(L, (void *) &ctx);
+	lua_pushcfunction(L, nflua_docall);
+	lua_pushlightuserdata(L, &ctx);
 
 	if (luaU_pcall(L, 1, 1)) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		goto cleanup;
 	}
 
-	match = (bool) lua_toboolean(L, -1);
+	switch (mode) {
+	case NFLUA_MATCH:
+		r.mt = lua_toboolean(L, -1);
+		break;
+	case NFLUA_TARGET:
+		if (lua_isstring(L, -1))
+			r.tg = string_to_tg(lua_tostring(L, -1));
+		break;
+	}
 
 cleanup:
+	if (mode == NFLUA_TARGET) {
+		if (ctx.lskb)
+			r.tg = NF_STOLEN;
+		else if (r.tg == NF_STOLEN)
+			r.tg = XT_CONTINUE;
+	}
+
 	ldata_unref(L, ctx.frame);
 	ldata_unref(L, ctx.packet);
 	lua_settop(L, base);
 unlock:
 	spin_unlock(&info->state->lock);
-	return match;
+	return r;
+}
+
+static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
+{
+	const struct xt_lua_mtinfo *info = par->matchinfo;
+
+	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) &&
+	    tcp_payload_length(skb) <= 0)
+		return false;
+
+	return nflua_call((struct sk_buff *)skb, par, NFLUA_MATCH).mt;
+}
+
+static void nflua_tg_destroy(const struct xt_tgdtor_param *par)
+{
+	struct xt_lua_mtinfo *info = par->targinfo;
+
+	if (info->state != NULL)
+		nflua_state_put(info->state);
+}
+
+static int nflua_tg_checkentry(const struct xt_tgchk_param *par)
+{
+	struct xt_lua_mtinfo *info = par->targinfo;
+	struct nflua_state *s;
+
+	s = nflua_state_lookup(xt_lua_pernet(par->net), info->name);
+	if (s == NULL)
+		return -ENOENT;
+
+	info->state = nflua_state_get(s);
+	return 0;
+}
+
+static unsigned int nflua_target(struct sk_buff *skb,
+		const struct xt_action_param *par)
+{
+	return nflua_call(skb, (struct xt_action_param *)par, NFLUA_TARGET).tg;
 }
 
 static struct xt_match nflua_mt_reg __read_mostly = {
@@ -149,9 +237,21 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 	.revision   = 0,
 	.family     = NFPROTO_UNSPEC,
 	.match      = nflua_match,
-	.checkentry = nflua_checkentry,
-	.destroy    = nflua_destroy,
+	.checkentry = nflua_mt_checkentry,
+	.destroy    = nflua_mt_destroy,
 	.matchsize  = sizeof(struct xt_lua_mtinfo),
+	.usersize   = offsetof(struct xt_lua_mtinfo, state),
+	.me         = THIS_MODULE
+};
+
+static struct xt_target nflua_tg_reg __read_mostly = {
+	.name       = "LUA",
+	.revision   = 0,
+	.family     = NFPROTO_UNSPEC,
+	.target     = nflua_target,
+	.checkentry = nflua_tg_checkentry,
+	.destroy    = nflua_tg_destroy,
+	.targetsize = sizeof(struct xt_lua_mtinfo),
 	.usersize   = offsetof(struct xt_lua_mtinfo, state),
 	.me         = THIS_MODULE
 };
@@ -204,8 +304,16 @@ static int __init xt_lua_init(void)
 	if ((ret = netlink_register_notifier(&nl_notifier)))
 		return ret;
 
-	if ((ret = xt_register_match(&nflua_mt_reg)))
+	if ((ret = xt_register_match(&nflua_mt_reg))) {
 		unregister_pernet_subsys(&xt_lua_net_ops);
+		return ret;
+	}
+
+	if ((ret = xt_register_target(&nflua_tg_reg))) {
+		unregister_pernet_subsys(&xt_lua_net_ops);
+		xt_unregister_match(&nflua_mt_reg);
+		return ret;
+	}
 
 	return ret;
 }
@@ -214,6 +322,7 @@ static void __exit xt_lua_exit(void)
 {
 	pr_debug("unloading module\n");
 	xt_unregister_match(&nflua_mt_reg);
+	xt_unregister_target(&nflua_tg_reg);
 	unregister_pernet_subsys(&xt_lua_net_ops);
 	netlink_unregister_notifier(&nl_notifier);
 }

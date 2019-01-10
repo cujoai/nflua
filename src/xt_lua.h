@@ -57,13 +57,20 @@ struct xt_lua_net {
 struct net;
 struct xt_lua_net *xt_lua_pernet(struct net *net);
 
-#define NFLUA_SKBCLONE "nflua_skbclone"
 #define NFLUA_CTXENTRY "nflua_ctx"
+
+enum {
+	NFLUA_MATCH,
+	NFLUA_TARGET
+};
+
 struct nflua_ctx {
 	struct sk_buff *skb;
 	struct xt_action_param *par;
 	int frame;
 	int packet;
+	int mode;
+	struct sk_buff **lskb;
 };
 #endif /* __KERNEL__ */
 

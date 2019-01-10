@@ -156,22 +156,20 @@ error:
 
 static int nflua_getpacket(lua_State *L)
 {
-	struct sk_buff **lskb;
 	struct nflua_ctx *ctx;
 
 	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
 
-	lua_getfield(L, LUA_REGISTRYINDEX, NFLUA_SKBCLONE);
-	if (!lua_isuserdata(L, -1)) {
-		lskb = lnewskbuff(L);
-		if ((*lskb = skb_copy(ctx->skb, GFP_ATOMIC)) == NULL)
-			return luaL_error(L, "couldn't copy packet");
+	if (ctx->mode != NFLUA_TARGET)
+		return luaL_error(L, "not on target context");
 
+	if (!ctx->lskb || !luaU_getudata(L, ctx->lskb)) {
+		ctx->lskb = lnewskbuff(L);
+		*ctx->lskb = ctx->skb;
 		luaL_setmetatable(L, NFLUA_SKBUFF);
-		lua_pushvalue(L, -1);
-		lua_setfield(L, LUA_REGISTRYINDEX, NFLUA_SKBCLONE);
+		luaU_registerudata(L, -1, ctx->lskb);
 	}
 
 	return 1;
@@ -248,6 +246,9 @@ int nflua_hotdrop(lua_State *L)
 	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
+
+	if (ctx->mode != NFLUA_MATCH)
+		return luaL_error(L, "not on match context");
 
 	luaL_checktype(L, -1, LUA_TBOOLEAN);
 	ctx->par->hotdrop = lua_toboolean(L, -1);
