@@ -65,10 +65,6 @@ MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
 
-extern int luaopen_json(lua_State* L);
-
-extern int luaopen_base64(lua_State* L);
-
 #define NFLUA_SOCK "nflua_sock"
 
 static int xt_lua_net_id __read_mostly;
@@ -473,6 +469,7 @@ int luaopen_timer(lua_State *L)
 	luaL_newlib(L, timerlib);
 	return 1;
 }
+EXPORT_SYMBOL(luaopen_timer);
 
 int nflua_connid(lua_State *L)
 {
@@ -614,14 +611,6 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	luaU_setenv(L, xt_lua, struct xt_lua_net);
 	luaL_openlibs(L);
-
-	luaL_requiref(L, "nf", luaopen_nf, 1);
-	luaL_requiref(L, "data", luaopen_data, 1);
-	luaL_requiref(L, "json", luaopen_json, 1);
-	luaL_requiref(L, "base64", luaopen_base64, 1);
-	luaL_requiref(L, "timer", luaopen_timer, 1);
-	lua_pop(L, 5); /* nf, data, json, base64, timer */
-
 	luaU_setregval(L, NFLUA_SOCK, sock);
 	spin_unlock_bh(&xt_lua->lock);
 
