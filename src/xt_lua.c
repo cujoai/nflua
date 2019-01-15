@@ -607,6 +607,10 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	luaU_setenv(L, xt_lua, struct xt_lua_net);
 	luaL_openlibs(L);
+
+	luaL_requiref(L, "data", luaopen_data, 1);
+	lua_pop(L, 1);
+
 	luaU_setregval(L, NFLUA_SOCK, sock);
 	spin_unlock_bh(&xt_lua->lock);
 
