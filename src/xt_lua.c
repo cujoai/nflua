@@ -83,6 +83,8 @@ static inline struct xt_lua_net *xt_lua_pernet(struct net *net)
 struct nflua_ctx {
 	struct sk_buff *skb;
 	struct xt_action_param *par;
+	int frame;
+	int packet;
 };
 
 struct nftimer_ctx {
@@ -125,49 +127,58 @@ static int nflua_pcall(lua_State *L, int nargs, int nresults)
 	return status;
 }
 
+static int nflua_domatch(lua_State *L)
+{
+	struct nflua_ctx *ctx = lua_touserdata(L, 1);
+	struct sk_buff *skb = ctx->skb;
+	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
+
+	luaU_setregval(L, NFLUA_CTXENTRY, ctx);
+	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
+
+	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
+		return luaL_error(L, "couldn't find match function: %s\n", info->func);
+
+	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
+	ctx->packet = ldata_newref(L, skb->data, skb->len);
+
+	lua_call(L, 2, 1);
+
+	return 1;
+}
+
 static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
-	const struct xt_lua_mtinfo *info = par->matchinfo;
-	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par};
+	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par,
+		.frame = LUA_NOREF, .packet = LUA_NOREF};
 	struct xt_lua_net *xt_lua = xt_lua_pernet(xt_net(par));
 	lua_State *L;
 	bool match = false;
-	int error  = 0;
-	int frame = LUA_NOREF;
-	int packet = LUA_NOREF;
+	int base;
 
 	spin_lock(&xt_lua->lock);
 	if (xt_lua->L == NULL) {
 		pr_err("invalid lua state");
-		goto out2;
+		goto unlock;
 	}
 	L = xt_lua->L;
-	luaU_setregval(L, NFLUA_CTXENTRY, &ctx);
 
-	if (lua_getglobal(L, info->func) != LUA_TFUNCTION) {
-		pr_err("%s: %s\n", "couldn't find match function", info->func);
-		goto out;
-	}
+	base = lua_gettop(L);
+	lua_pushcfunction(L, nflua_domatch);
+	lua_pushlightuserdata(L, (void *) &ctx);
 
-	frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
-	packet = ldata_newref(L, skb->data, skb->len);
-
-	error = nflua_pcall(L, 2, 1);
-
-	ldata_unref(L, frame);
-	ldata_unref(L, packet);
-
-	if (error) {
+	if (nflua_pcall(L, 1, 1)) {
 		pr_err("%s\n", lua_tostring(L, -1));
-		goto out;
+		goto cleanup;
 	}
 
 	match = (bool) lua_toboolean(L, -1);
-out:
-	lua_pop(L, 1); /* result, info->func or error */
-	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
-	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
-out2:
+
+cleanup:
+	ldata_unref(L, ctx.frame);
+	ldata_unref(L, ctx.packet);
+	lua_settop(L, base);
+unlock:
 	spin_unlock(&xt_lua->lock);
 	return match;
 }
