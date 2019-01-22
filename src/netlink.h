@@ -69,9 +69,12 @@ enum {
 #define NFLM_F_DONE		0x04	  /* Last message                  */
 #define NFLM_F_INIT		0x08	  /* First message                 */
 
+#define NFLUA_MIN_ALLOC_BYTES (32 * 1024UL)
+
 struct nflua_nl_state {
 	char  name[NFLUA_NAME_MAXSIZE];
-	__u16 maxalloc;           /* Max alloc kbytes              */
+	__u32 maxalloc;           /* Max allocated bytes           */
+	__u32 curralloc;          /* Current allocated bytes       */
 };
 
 struct nflua_nl_fragment {

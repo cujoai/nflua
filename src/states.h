@@ -35,7 +35,8 @@ struct nflua_state {
 	refcount_t users;
 	int id;
 	u32 dseqnum;
-	unsigned int maxalloc; /* Max alloc bytes  */
+	size_t maxalloc;
+	size_t curralloc;
 	unsigned char name[NFLUA_NAME_MAXSIZE];
 };
 
@@ -43,7 +44,7 @@ typedef int (*nflua_state_cb)(struct nflua_state *s, unsigned short total,
         void *data);
 
 struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
-        unsigned int maxalloc, const char *name);
+        size_t maxalloc, const char *name);
 
 int nflua_state_destroy(struct xt_lua_net *xt_lua, const char *name);
 

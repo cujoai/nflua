@@ -26,7 +26,7 @@
 #include <lua.h>
 #include <nflua.h>
 
-#define DEFAULT_MAXALLOC_KB	4096
+#define DEFAULT_MAXALLOC_BYTES	(32 * 1024)
 
 struct control {
 	struct nflua_control ctrl;
@@ -165,7 +165,7 @@ static int lcontrol_create(lua_State *L)
 	struct control *c = getcontrol(L);
 	size_t len;
 	const char *name = luaL_checklstring(L, 2, &len);
-	lua_Integer maxalloc = luaL_optinteger(L, 3, DEFAULT_MAXALLOC_KB);
+	lua_Integer maxalloc = luaL_optinteger(L, 3, DEFAULT_MAXALLOC_BYTES);
 	struct nflua_nl_state state;
 
 	if (len >= NFLUA_NAME_MAXSIZE)
@@ -213,6 +213,8 @@ static void buildlist(lua_State *L, struct nflua_nl_state *states, size_t n)
 		lua_setfield(L, -2, "name");
 		lua_pushinteger(L, states[i].maxalloc);
 		lua_setfield(L, -2, "maxalloc");
+		lua_pushinteger(L, states[i].curralloc);
+		lua_setfield(L, -2, "curralloc");
 		lua_seti(L, -2, i + 1);
 	}
 }
@@ -375,7 +377,7 @@ int luaopen_nflua(lua_State *L)
 	luaL_newlib(L, nflua_lib);
 
 	setconst(L, "datamaxsize", NFLUA_DATA_MAXSIZE);
-	setconst(L, "defaultmaxallockb", DEFAULT_MAXALLOC_KB);
+	setconst(L, "defaultmaxallocbytes", DEFAULT_MAXALLOC_BYTES);
 	setconst(L, "fragsize", NFLUA_DATA_FRAG_SIZE);
 	setconst(L, "maxstates", NFLUA_MAX_STATES);
 	setconst(L, "scriptnamemaxsize", NFLUA_SCRIPTNAME_MAXSIZE);

@@ -4,7 +4,7 @@ Index
 - [`nflua.control`](#control--nfluacontrolport)
 - [`nflua.data`](#nfluadataport)
 - [`nflua.datamaxsize`](#nfluadatamaxsize)
-- [`nflua.defaultmaxallockb`](#defaultmaxallockb)
+- [`nflua.defaultmaxallocbytes`](#defaultmaxallocbytes)
 - [`nflua.fragsize`](#nfluafragsize)
 - [`nflua.maxstates`](#nfluamaxstates)
 - [`nflua.scriptnamemaxsize`](#nfluascriptnamemaxsize)
@@ -46,9 +46,9 @@ The number `port` is interpreted just like in function [`nflua.control`](#contro
 
 Integer constant that represents the maximum number of bytes transmitted in a single data stream.
 
-### `nflua.defaultmaxallockb`
+### `nflua.defaultmaxallocbytes`
 
-Integer constant that represents the default maximum allocation in kilobytes for each state.
+Integer constant that represents the default maximum number of bytes that each state can allocate.
 
 ### `nflua.fragsize`
 

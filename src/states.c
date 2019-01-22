@@ -76,9 +76,30 @@ static void state_destroy(struct xt_lua_net *xt_lua, struct nflua_state *s)
 	kfree(s);
 }
 
+static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+	struct nflua_state *s = ud;
+	void *nptr = NULL;
+
+	/* osize doesn't represent the object old size if ptr is NULL */
+	osize = ptr != NULL ? osize : 0;
+
+	if (nsize == 0) {
+		s->curralloc -= osize;
+		kfree(ptr);
+	} else if (s->curralloc - osize + nsize > s->maxalloc) {
+		pr_warn_ratelimited("maxalloc limit %zu reached on state %.*s\n",
+		    s->maxalloc, NFLUA_NAME_MAXSIZE, s->name);
+	} else if ((nptr = krealloc(ptr, nsize, GFP_ATOMIC)) != NULL) {
+		s->curralloc += nsize - osize;
+	}
+
+	return nptr;
+}
+
 static int state_init(struct nflua_state *s)
 {
-	s->L = luaL_newstate();
+	s->L = lua_newstate(lua_alloc, s);
 	if (s->L == NULL)
 		return -ENOMEM;
 
@@ -97,14 +118,15 @@ static int state_init(struct nflua_state *s)
 }
 
 struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
-	unsigned int maxalloc, const char *name)
+	size_t maxalloc, const char *name)
 {
 	struct hlist_head *head;
 	struct nflua_state *s = nflua_state_lookup(xt_lua, name);
 	int namelen = strnlen(name, NFLUA_NAME_MAXSIZE);
 	int id;
 
-	pr_debug("creating state: %.*s maxalloc: %u\n", namelen, name, maxalloc);
+	pr_debug("creating state: %.*s maxalloc: %zd\n", namelen, name,
+		maxalloc);
 
 	if (s != NULL) {
 		pr_err("state already exists: %.*s\n", namelen, name);
@@ -118,6 +140,12 @@ struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
 		return NULL;
 	}
 
+	if (maxalloc < NFLUA_MIN_ALLOC_BYTES) {
+		pr_err("maxalloc %zu should be greater then MIN_ALLOC %zu\n",
+		    maxalloc, NFLUA_MIN_ALLOC_BYTES);
+		return NULL;
+	}
+
 	if ((s = kzalloc(sizeof(struct nflua_state), GFP_ATOMIC)) == NULL) {
 		pr_err("could not allocate nflua state\n");
 		goto err;
@@ -125,10 +153,11 @@ struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
 
 	INIT_HLIST_NODE(&s->node);
 	spin_lock_init(&s->lock);
-	s->id       = id;
-	s->dseqnum  = 0;
-	s->maxalloc = maxalloc;
-	s->sock     = xt_lua->sock;
+	s->id        = id;
+	s->dseqnum   = 0;
+	s->maxalloc  = maxalloc;
+	s->curralloc = 0;
+	s->sock      = xt_lua->sock;
 	memcpy(&(s->name), name, namelen);
 
 	if (state_init(s)) {

@@ -61,9 +61,10 @@ elseif arg[1] == 'destroy' then
 	run('destroy', table.unpack(arg, 2, 2))
 elseif arg[1] == 'list' then
 	local states = run('list')
-	print'name\t\tmaxalloc'
+	print'name\t\tmaxalloc\tcurralloc'
 	for _, state in ipairs(states) do
-		print(string.format('%-16s%-16d', state.name, state.maxalloc))
+		print(string.format('%-16s%-16d%-16d', state.name,
+			state.maxalloc, state.curralloc))
 	end
 elseif arg[1] == 'execute' then
 	local code

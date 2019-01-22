@@ -147,7 +147,8 @@ static int write_state(struct nflua_state *s, struct state_cursor *c)
 
 	memset(state, 0, sizeof(struct nflua_nl_state));
 	memcpy(&state->name, s->name, namelen);
-	state->maxalloc = s->maxalloc;
+	state->maxalloc  = s->maxalloc;
+	state->curralloc = s->curralloc;
 
 	c->count++;
 

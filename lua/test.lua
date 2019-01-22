@@ -217,13 +217,13 @@ test('control.create', function()
 	run(s, 'create', 'st1')
 	local l = run(s, 'list')
 	compare(l[1].name, 'st1')
-	compare(l[1].maxalloc, nflua.defaultmaxallockb)
+	compare(l[1].maxalloc, nflua.defaultmaxallocbytes)
 	run(s, 'destroy', 'st1')
 
-	run(s, 'create', 'st2', 5678)
+	run(s, 'create', 'st2', 128 * 1024)
 	local l = run(s, 'list')
 	compare(l[1].name, 'st2')
-	compare(l[1].maxalloc, 5678)
+	compare(l[1].maxalloc, 128 * 1024)
 
 	compare(s:create('st2'), true)
 	kernelfail(s, 'state already exists: st2')
@@ -243,6 +243,19 @@ test('control.create', function()
 	local ok, err = pcall(s.create, s, name)
 	compare(ok, false)
 	compare(err, argerror(2, 'name too long'))
+end)
+
+test('allocation size', function()
+	local s = assert(nflua.control())
+
+	local code = 'string.rep("a", 32 * 1024)'
+
+	run(s, 'create', 'st1')
+	compare(s:execute('st1', code), true)
+	kernelfail(s, 'could not execute / load data!')
+
+	run(s, 'create', 'st2', 128 * 1024)
+	run(s, 'execute', 'st2', code)
 end)
 
 test('control.destroy', function()
