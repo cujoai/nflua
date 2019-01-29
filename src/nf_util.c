@@ -315,6 +315,34 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	return nskb;
 }
 
+static int tcp_ipv6_payload_length(const struct sk_buff *skb)
+{
+	struct ipv6hdr *iph = ipv6_hdr(skb);
+	struct tcphdr tcph;
+	int tcphoff;
+	__be16 frag_off;
+	u8 proto;
+
+	proto = iph->nexthdr;
+	tcphoff = ipv6_skip_exthdr(skb, (u8*)(iph + 1) - skb->data,
+				   &proto, &frag_off);
+
+	if (proto != IPPROTO_TCP) {
+		pr_warn_ratelimited("TCP length called on non tcp packet.\n");
+		return -1;
+	}
+
+	if (unlikely(tcphoff < 0 || tcphoff >= skb->len)) {
+		pr_warn("Could not get TCP header.\n");
+		return -1;
+	}
+
+	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr)))
+		BUG();
+
+	return skb->len - tcphoff - tcph.doff * 4;
+}
+
 static int ipv6_forward_finish(struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
@@ -526,6 +554,28 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	return nskb;
 }
 
+static int tcp_ipv4_payload_length(const struct sk_buff *skb)
+{
+	struct tcphdr tcph;
+	int tcphoff;
+
+	if (ip_hdr(skb)->protocol != IPPROTO_TCP) {
+		pr_warn_ratelimited("TCP length called on non tcp packet.\n");
+		return -1;
+	}
+
+	tcphoff = skb_transport_offset(skb);
+	if (unlikely(tcphoff < 0 || tcphoff >= skb->len)) {
+		pr_warn("Could not get TCP header.\n");
+		return -1;
+	}
+
+	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr)))
+		BUG();
+
+	return skb->len - tcphoff - tcph.doff * 4;
+}
+
 struct sk_buff *tcp_payload(struct sk_buff *skb,
                             unsigned char *payload, size_t len)
 {
@@ -613,6 +663,15 @@ int tcp_send(struct sk_buff *skb)
 		return ipv6_forward_finish(skb);
 #endif
 	return ipv4_forward_finish(skb);
+}
+
+int tcp_payload_length(const struct sk_buff *skb)
+{
+#if IS_ENABLED(CONFIG_IPV6)
+	if (skb->protocol == htons(ETH_P_IPV6))
+		return tcp_ipv6_payload_length(skb);
+#endif
+	return tcp_ipv4_payload_length(skb);
 }
 
 int route_me_harder(struct sk_buff *skb)

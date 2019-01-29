@@ -155,9 +155,13 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par,
 		.frame = LUA_NOREF, .packet = LUA_NOREF};
 	struct xt_lua_net *xt_lua = xt_lua_pernet(xt_net(par));
+	const struct xt_lua_mtinfo *info = par->matchinfo;
 	lua_State *L;
 	bool match = false;
 	int base;
+
+	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) && tcp_payload_length(skb) <= 0)
+		return match;
 
 	spin_lock(&xt_lua->lock);
 	if (xt_lua->L == NULL) {

@@ -23,9 +23,15 @@
 #include <xtables.h>
 #include <xt_lua.h>
 
+enum {
+	O_FUNCTION    = 0x02,
+	O_TCP_PAYLOAD = 0x04
+};
+
 static void nflua_help(void)
 {
 	printf("Netfilter Lua\n"
+		"--tcp-payload\tmatch if tcp payload length is greater than zero\n"
 		"[!] --function\tmatch function\n");
 }
 
@@ -39,15 +45,20 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) (*match)->data;
 
 	switch (c) {
-	case '1': /* --function */
+	case O_FUNCTION:
 		if (strlen(optarg) >= XT_LUA_FUNC_SIZE)
 			xtables_error(PARAMETER_PROBLEM,
-				"'--function' is too long (max: %zu)",
+				"'--function' is too long (max: %u)",
 				XT_LUA_FUNC_SIZE - 1);
 
 		strcpy(info->func, optarg);
 
-		*flags = 1;
+		*flags |= O_FUNCTION;
+		break;
+	case O_TCP_PAYLOAD:
+		info->flags |= XT_NFLUA_TCP_PAYLOAD;
+
+		*flags |= O_TCP_PAYLOAD;
 		break;
 	}
 
@@ -56,12 +67,13 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 static void nflua_check(unsigned int flags)
 {
-	if (!flags)
+	if (!(flags & O_FUNCTION))
 		xtables_error(PARAMETER_PROBLEM, "'--function' is mandatory");
 }
 
 static const struct option nflua_opts[] = {
-	{.name = "function", .has_arg = 1, .val = '1'},
+	{.name = "function", .has_arg = 1, .val = O_FUNCTION},
+	{.name = "tcp-payload", .has_arg = 0, .val = O_TCP_PAYLOAD},
 	XT_GETOPT_TABLEEND,
 };
 
@@ -69,9 +81,13 @@ static void
 nflua_print(const void *ip, const struct xt_entry_match *match, int numeric)
 {
 	((void) ip);
+	((void) numeric);
         struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
 
         printf(" %s", info->func);
+
+	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
+		printf(" tcp-payload");
 }
 
 static void
@@ -81,6 +97,9 @@ nflua_save(const void *ip, const struct xt_entry_match *match)
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
 
 	printf(" --function %s", info->func);
+
+	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
+		printf(" --tcp-payload");
 }
 
 static struct xtables_match nflua_mt_reg = {
