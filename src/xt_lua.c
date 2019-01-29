@@ -139,6 +139,9 @@ static int nflua_domatch(lua_State *L)
 	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
 		return luaL_error(L, "couldn't find match function: %s\n", info->func);
 
+	if (skb_linearize(skb) != 0)
+		return luaL_error(L, "skb linearization failed.\n");
+
 	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
 
