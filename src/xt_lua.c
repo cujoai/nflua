@@ -505,12 +505,26 @@ int nflua_connid(lua_State *L)
 	return 1;
 }
 
+int nflua_hotdrop(lua_State *L)
+{
+	struct nflua_ctx *ctx;
+
+	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	if (ctx == NULL)
+		return luaL_error(L, "couldn't get packet context");
+
+	luaL_checktype(L, -1, LUA_TBOOLEAN);
+	ctx->par->hotdrop = lua_toboolean(L, -1);
+	return 0;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
 	{"time", nflua_time},
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
+	{"hotdrop", nflua_hotdrop},
 	{NULL, NULL}
 };
 
