@@ -16,9 +16,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#define LUAU_PATH      LIBEXEC_PATH "/cujo/lua"
-
-
 #ifndef _LUA_UTIL_H
 #define _LUA_UTIL_H
 
