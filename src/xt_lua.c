@@ -229,7 +229,7 @@ error:
 	return luaL_error(L, "couldn't reply a packet");
 }
 
-#ifdef CUJO_COMCAST_AXB6
+#ifdef ARRISXB6
 #define nlmsg_unicast(sk, skb, portid) nlmsg_unicast((sk), (skb), (portid), 0)
 #endif
 
