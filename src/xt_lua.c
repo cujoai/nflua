@@ -51,6 +51,10 @@
 #include "nf_util.h"
 #include "luautil.h"
 
+#ifndef NFLUA_SETPAUSE
+#define NFLUA_SETPAUSE	100
+#endif /* NFLUA_SETPAUSE */
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
 static inline u32 skb_mac_header_len(const struct sk_buff *skb)
 {
@@ -653,6 +657,11 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	luaL_requiref(L, "data", luaopen_data, 1);
 	lua_pop(L, 1);
+
+	/* fixes an issue where the Lua's GC enters a vicious cycle.
+	 * more info here: https://marc.info/?l=lua-l&m=155024035605499&w=2
+	 */
+	lua_gc(L, LUA_GCSETPAUSE, NFLUA_SETPAUSE);
 
 	luaU_setregval(L, NFLUA_SOCK, sock);
 	spin_unlock_bh(&xt_lua->lock);
