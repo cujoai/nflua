@@ -132,6 +132,7 @@ static int nflua_domatch(lua_State *L)
 	struct nflua_ctx *ctx = lua_touserdata(L, 1);
 	struct sk_buff *skb = ctx->skb;
 	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
+	int error;
 
 	luaU_setregval(L, NFLUA_CTXENTRY, ctx);
 	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
@@ -145,7 +146,13 @@ static int nflua_domatch(lua_State *L)
 	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
 
-	lua_call(L, 2, 1);
+	error =  lua_pcall(L, 2, 1, 0);
+
+	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
+	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
+
+	if (error)
+		return lua_error(L);
 
 	return 1;
 }
