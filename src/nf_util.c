@@ -318,7 +318,7 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 static int tcp_ipv6_payload_length(const struct sk_buff *skb)
 {
 	struct ipv6hdr *iph = ipv6_hdr(skb);
-	struct tcphdr tcph;
+	struct tcphdr _tcph, *tcph;
 	int tcphoff;
 	__be16 frag_off;
 	u8 proto;
@@ -333,14 +333,17 @@ static int tcp_ipv6_payload_length(const struct sk_buff *skb)
 	}
 
 	if (unlikely(tcphoff < 0 || tcphoff >= skb->len)) {
+		pr_warn("Invalid TCP header offset.\n");
+		return -1;
+	}
+
+	tcph = skb_header_pointer(skb, tcphoff, sizeof(_tcph), &_tcph);
+	if (unlikely(tcph == NULL)) {
 		pr_warn("Could not get TCP header.\n");
 		return -1;
 	}
 
-	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr)))
-		BUG();
-
-	return skb->len - tcphoff - tcph.doff * 4;
+	return skb->len - tcphoff - tcph->doff * 4;
 }
 
 static int ipv6_forward_finish(struct sk_buff *skb)
@@ -556,7 +559,7 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 
 static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 {
-	struct tcphdr tcph;
+	struct tcphdr _tcph, *tcph;
 	int tcphoff;
 
 	if (ip_hdr(skb)->protocol != IPPROTO_TCP) {
@@ -564,16 +567,19 @@ static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 		return -1;
 	}
 
-	tcphoff = skb_transport_offset(skb);
+	tcphoff = ip_hdrlen(skb);
 	if (unlikely(tcphoff < 0 || tcphoff >= skb->len)) {
+		pr_warn("Invalid TCP header offset.\n");
+		return -1;
+	}
+
+	tcph = skb_header_pointer(skb, tcphoff, sizeof(_tcph), &_tcph);
+	if (unlikely(tcph == NULL)) {
 		pr_warn("Could not get TCP header.\n");
 		return -1;
 	}
 
-	if (skb_copy_bits(skb, tcphoff, &tcph, sizeof(struct tcphdr)))
-		BUG();
-
-	return skb->len - tcphoff - tcph.doff * 4;
+	return skb->len - tcphoff - tcph->doff * 4;
 }
 
 struct sk_buff *tcp_payload(struct sk_buff *skb,
