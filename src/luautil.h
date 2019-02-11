@@ -22,26 +22,43 @@
 #include <lua.h>
 #include <lauxlib.h>
 
-#define luaU_getudata(L, ud) \
-	(lua_rawgetp(L, LUA_REGISTRYINDEX, (void *)ud) == LUA_TUSERDATA)
+typedef const struct {} luaU_id[1];
 
-#define luaU_setudata(L, ud) \
-	(lua_rawsetp(L, LUA_REGISTRYINDEX, (void *)ud))
+static inline int luaU_pushudata(lua_State *L, void *ud)
+{
+	return lua_rawgetp(L, LUA_REGISTRYINDEX, ud) == LUA_TUSERDATA;
+}
 
-#define luaU_registerudata(L, i, ud) { \
-	lua_pushvalue(L, i); \
-	luaU_setudata(L, ud); }
+static inline void luaU_registerudata(lua_State *L, int v)
+{
+	void *ud = lua_touserdata(L, v);
+	lua_pushvalue(L, v);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, ud);
+}
 
-#define luaU_unregisterudata(L, ud) { \
-	lua_pushnil(L); \
-	luaU_setudata(L, ud); }
+static inline void luaU_unregisterudata(lua_State *L, void *ud)
+{
+	lua_pushnil(L);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, ud);
+}
 
-#define luaU_setuvalue(L, i, j) { \
-	int k = i; \
-	if (k < 0) \
-		k--; \
-	lua_pushvalue(L, j); \
-	lua_setuservalue(L, k); }
+static inline void luaU_setregval(lua_State *L, luaU_id id, void *v)
+{
+	if (v) lua_pushlightuserdata(L, v);
+	else lua_pushnil(L);
+	lua_rawsetp(L, LUA_REGISTRYINDEX, id);
+}
+
+static inline void *luaU_getregval(lua_State *L, luaU_id id)
+{
+	void *v;
+
+	lua_rawgetp(L, LUA_REGISTRYINDEX, id);
+	v = lua_touserdata(L, -1);
+	lua_pop(L, 1);
+
+	return v;
+}
 
 #define luaU_setenv(L, env, st) { \
 	st **penv = (st **)lua_getextraspace(L); \
@@ -49,22 +66,8 @@
 
 #define luaU_getenv(L, st)	(*((st **)lua_getextraspace(L)))
 
-#define luaU_getuvalue(L, ud, t) \
-	(luaU_getudata(L, ud) && lua_getuservalue(L, -1) == t)
-
-#define luaU_setregval(L, t, v) { \
-	if (v) lua_pushlightuserdata(L, v); \
-	else lua_pushnil(L); \
-	lua_setfield(L, LUA_REGISTRYINDEX, t); }
-
-#define luaU_getregval(L, t, v) { \
-	lua_getfield(L, LUA_REGISTRYINDEX, t); \
-	*v = lua_touserdata(L, -1); \
-	lua_pop(L, 1); }
-
-#define luaU_dostring(L, b, s, n)	\
-	(luaL_loadbufferx(L, b, s, n, "t") ||	\
-	 luaU_pcall(L, 0, 0))
+#define luaU_dostring(L, b, s, n) \
+	(luaL_loadbufferx(L, b, s, n, "t") || luaU_pcall(L, 0, 0))
 
 int luaU_pcall(lua_State *L, int nargs, int nresults);
 

@@ -42,6 +42,8 @@ struct xt_lua_mtinfo {
 #if defined(__KERNEL__)
 #include <linux/idr.h>
 
+#include "luautil.h"
+
 #define XT_LUA_HASH_BUCKETS (32)
 
 struct sock;
@@ -57,7 +59,7 @@ struct xt_lua_net {
 struct net;
 struct xt_lua_net *xt_lua_pernet(struct net *net);
 
-#define NFLUA_CTXENTRY "nflua_ctx"
+extern luaU_id nflua_ctx;
 
 enum {
 	NFLUA_MATCH,

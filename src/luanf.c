@@ -40,7 +40,7 @@ static int nflua_reply(lua_State *L)
 	unsigned char *msg;
 	struct nflua_ctx *ctx;
 
-	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	ctx = luaU_getregval(L, nflua_ctx);
 	if (ctx == NULL)
 		goto error;
 
@@ -107,14 +107,9 @@ static int nflua_netlink(lua_State *L)
 	return 1;
 }
 
-#define NFLUA_SKBUFF  "lskb"
-#define tolskbuff(L) ((struct sk_buff **) luaL_checkudata(L, 1, NFLUA_SKBUFF))
-#define lnewskbuff(L) \
-	((struct sk_buff **) lua_newuserdata(L, sizeof(struct sk_buff *)))
-
 static int nflua_skb_send(lua_State *L)
 {
-	struct sk_buff *nskb, **lskb = tolskbuff(L);
+	struct sk_buff *nskb, **lskb = luaL_checkudata(L, 1, "nflua.packet");
 	unsigned char *payload;
 	size_t len;
 
@@ -158,18 +153,20 @@ static int nflua_getpacket(lua_State *L)
 {
 	struct nflua_ctx *ctx;
 
-	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	ctx = luaU_getregval(L, nflua_ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
 
 	if (ctx->mode != NFLUA_TARGET)
 		return luaL_error(L, "not on target context");
 
-	if (!ctx->lskb || !luaU_getudata(L, ctx->lskb)) {
-		ctx->lskb = lnewskbuff(L);
+	if (ctx->lskb)
+		luaU_pushudata(L, ctx->lskb);
+	else {
+		ctx->lskb = lua_newuserdata(L, sizeof(struct sk_buff *));
 		*ctx->lskb = ctx->skb;
-		luaL_setmetatable(L, NFLUA_SKBUFF);
-		luaU_registerudata(L, -1, ctx->lskb);
+		luaL_setmetatable(L, "nflua.packet");
+		luaU_registerudata(L, -1);
 	}
 
 	return 1;
@@ -177,7 +174,7 @@ static int nflua_getpacket(lua_State *L)
 
 static int nflua_skb_free(lua_State *L)
 {
-	struct sk_buff **lskb = tolskbuff(L);
+	struct sk_buff **lskb = luaL_checkudata(L, 1, "nflua.packet");
 
 	if (*lskb != NULL) {
 		kfree_skb(*lskb);
@@ -189,7 +186,8 @@ static int nflua_skb_free(lua_State *L)
 
 static int nflua_skb_tostring(lua_State *L)
 {
-	struct sk_buff *skb = *tolskbuff(L);
+	struct sk_buff **lskb = luaL_checkudata(L, 1, "nflua.packet");
+	struct sk_buff *skb = *lskb;
 
 	if (skb == NULL) {
 		lua_pushliteral(L, "packet closed");
@@ -229,7 +227,7 @@ int nflua_connid(lua_State *L)
 	enum ip_conntrack_info info;
 	struct nf_conn *conn;
 
-	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	ctx = luaU_getregval(L, nflua_ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
 
@@ -243,7 +241,7 @@ int nflua_hotdrop(lua_State *L)
 {
 	struct nflua_ctx *ctx;
 
-	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	ctx = luaU_getregval(L, nflua_ctx);
 	if (ctx == NULL)
 		return luaL_error(L, "couldn't get packet context");
 
@@ -275,7 +273,7 @@ static const luaL_Reg nflua_skb_ops[] = {
 
 int luaopen_nf(lua_State *L)
 {
-	luaL_newmetatable(L, NFLUA_SKBUFF);
+	luaL_newmetatable(L, "nflua.packet");
 	lua_pushvalue(L, -1);
 	lua_setfield(L, -2, "__index");
 	luaL_setfuncs(L, nflua_skb_ops, 0);

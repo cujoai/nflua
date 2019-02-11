@@ -45,9 +45,9 @@ static void __timeout_cb(struct nftimer_ctx *ctx)
 	base = lua_gettop(ctx->state->L);
 
 	/* check if ltimer_destroy was called for this timer */
-	if (!luaU_getuvalue(ctx->state->L, ctx, LUA_TFUNCTION))
-		goto cleanup;
+	if (!luaU_pushudata(ctx->state->L, ctx)) goto cleanup;
 
+	lua_getuservalue(ctx->state->L, -1);
 	if (lua_pcall(ctx->state->L, 0, 0, 0) != 0) {
 		pr_warn("%s", lua_tostring(ctx->state->L, -1));
 		goto cleanup;
@@ -92,8 +92,10 @@ static int ltimer_create(lua_State *L)
 	if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
 		return luaL_error(L, "error setting timer");
 
-	luaU_registerudata(L, -1, ctx); /* shouldn't gc context */
-	luaU_setuvalue(L, -1, 2); /* store callback */
+	lua_pushvalue(L, 2);
+	lua_setuservalue(L, -2);
+
+	luaU_registerudata(L, -1);
 
 	return 1;
 }

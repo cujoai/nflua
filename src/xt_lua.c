@@ -29,7 +29,6 @@
 
 #include "xt_lua.h"
 #include "nf_util.h"
-#include "luautil.h"
 #include "netlink.h"
 #include "states.h"
 
@@ -40,7 +39,8 @@ MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
 
-#define NFLUA_SOCK "nflua_sock"
+luaU_id nflua_ctx;
+luaU_id nflua_sock;
 
 static int xt_lua_net_id __read_mostly;
 
@@ -83,7 +83,7 @@ static int nflua_docall(lua_State *L)
 	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
 	int error;
 
-	luaU_setregval(L, NFLUA_CTXENTRY, ctx);
+	luaU_setregval(L, nflua_ctx, ctx);
 
 	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
 		return luaL_error(L, "couldn't find function: %s\n", info->func);
@@ -96,7 +96,7 @@ static int nflua_docall(lua_State *L)
 
 	error = lua_pcall(L, 2, 1, 0);
 
-	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
+	luaU_setregval(L, nflua_ctx, NULL);
 	if (ctx->lskb) luaU_unregisterudata(L, ctx->lskb);
 
 	if (error)
