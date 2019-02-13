@@ -50,4 +50,5 @@ After this call no further operations can be performed on packet `packet`.
 ### `packet:send([payload])`
 
 Send the copied packet `packet` through the network and then closes it, thus it cannot be sent again.
-If `payload` is provided the original packet payload is replaced by the contents of string `payload`.
+If `payload` is provided, the original packet payload is replaced by the contents of string `payload`.
+This function only works when you acquire the packet during a match in FORWARD chain.
