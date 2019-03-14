@@ -632,11 +632,11 @@ static int __net_init xt_lua_net_init(struct net *net)
 	lua_State *L;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, &cfg);
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, THIS_MODULE, &cfg);
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE, &cfg);
 #else
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, groups, input,
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
 	                             NULL, THIS_MODULE);
 #endif
 	if (sock == NULL)
