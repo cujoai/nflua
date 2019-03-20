@@ -310,24 +310,23 @@ static int ldata_receive(lua_State *L)
 {
 	struct nflua_data *dch = getdata(L);
 	char state[NFLUA_NAME_MAXSIZE] = {0};
-	size_t size, offset, totalrecv;
+	size_t size, offset;
 	int recv;
 	char *buffer = ldata_topointer(L, 2, &size);
 
 	if (buffer == NULL) luaL_argerror(L, 2, "expected ldata object");
 
 	offset = luaL_checkinteger(L, 3);
-	if (offset >= size || size - offset < NFLUA_DATA_FRAG_SIZE)
+	if (offset >= size || size - offset < NFLUA_DATA_MAXSIZE)
 		luaL_argerror(L, 3, "not enough space in buffer");
 
-	recv = nflua_data_receive(dch, &totalrecv, state, buffer + offset);
+	recv = nflua_data_receive(dch, state, buffer + offset);
 	if (recv < 0) return pusherrno(L, recv);
 
 	lua_pushinteger(L, recv);
-	lua_pushinteger(L, totalrecv);
 	lua_pushstring(L, state);
 
-	return 3;
+	return 2;
 }
 
 static const luaL_Reg control_mt[] = {
@@ -378,7 +377,6 @@ int luaopen_nflua(lua_State *L)
 
 	setconst(L, "datamaxsize", NFLUA_DATA_MAXSIZE);
 	setconst(L, "defaultmaxallocbytes", DEFAULT_MAXALLOC_BYTES);
-	setconst(L, "fragsize", NFLUA_DATA_FRAG_SIZE);
 	setconst(L, "maxstates", NFLUA_MAX_STATES);
 	setconst(L, "scriptnamemaxsize", NFLUA_SCRIPTNAME_MAXSIZE);
 	setconst(L, "statenamemaxsize", NFLUA_NAME_MAXSIZE);

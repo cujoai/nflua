@@ -34,15 +34,13 @@
 #define NFLUA_SCRIPT_FRAG_SIZE \
 	(NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_script)))
 
-#define NFLUA_DATA_FRAG_SIZE \
-	(NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_data)))
-
 #define NFLUA_LIST_FRAG_SIZE \
 	(NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_list)))
 
-#define NFLUA_SCRIPT_MAXSIZE (NFLUA_SCRIPT_FRAG_SIZE * NFLUA_MAX_FRAGS) /* +- 64k */
+#define NFLUA_DATA_MAXSIZE \
+	(NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_data)))
 
-#define NFLUA_DATA_MAXSIZE (NFLUA_DATA_FRAG_SIZE * NFLUA_MAX_FRAGS) /* +- 64k */
+#define NFLUA_SCRIPT_MAXSIZE (NFLUA_SCRIPT_FRAG_SIZE * NFLUA_MAX_FRAGS) /* +- 64k */
 
 #define NFLUA_LIST_MAXSIZE (NFLUA_LIST_FRAG_SIZE * NFLUA_MAX_FRAGS) /* +- 64k */
 
@@ -78,7 +76,6 @@ struct nflua_nl_state {
 };
 
 struct nflua_nl_fragment {
-	__s32 stateid;            /* State Id                      */
 	__u32 seq;                /* Current frament number        */
 	__u32 offset;             /* Current number of items sent  */
 };
@@ -95,7 +92,6 @@ struct nflua_nl_destroy {
 struct nflua_nl_data {
 	__u32 total;              /* Total number of bytes         */
 	char  name[NFLUA_NAME_MAXSIZE];
-	struct nflua_nl_fragment frag;
 };
 
 struct nflua_nl_script {

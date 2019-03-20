@@ -178,65 +178,29 @@ int nflua_nl_send_data(struct nflua_state *s, u32 pid, u32 group,
 {
 	struct sk_buff *skb;
 	struct nflua_nl_data *data;
-	struct nflua_nl_fragment *frag;
-	unsigned short i, pkts = 1;
-	unsigned int plen, offset = 0;
 	int flags, ret = -1;
-	void *nldata;
 	size_t size, hdrsize = NLMSG_ALIGN(sizeof(struct nflua_nl_data));
 
 	if (len > NFLUA_DATA_MAXSIZE)
 		return -EMSGSIZE;
 
-	if (len > NFLUA_DATA_FRAG_SIZE) {
-		pkts = len / NFLUA_DATA_FRAG_SIZE
-			+ ((len % NFLUA_DATA_FRAG_SIZE) != 0);
-	}
-
-	flags = NFLM_F_REQUEST | NFLM_F_INIT;
-	flags |= pkts > 1 ? NFLM_F_MULTI : 0;
-
 	s->dseqnum++;
-	for (i = 0; i < pkts; i++) {
-		if (i > 0)
-			hdrsize = NLMSG_ALIGN(sizeof(struct nflua_nl_fragment));
+	flags = NFLM_F_REQUEST | NFLM_F_DONE;
+	size = len + hdrsize;
 
-		plen = min(len - offset, NFLUA_DATA_FRAG_SIZE);
-		size = plen + hdrsize;
-
-		if ((i + 1) == pkts)
-			flags |= NFLM_F_DONE;
-
-		if ((ret = nflua_get_skb(&skb, s->dseqnum, NFLMSG_DATA, flags,
-			size, GFP_ATOMIC)) < 0) {
-			pr_err("could not alloc data packet\n");
-			return ret;
-		}
-
-		nldata = nlmsg_data((struct nlmsghdr *)skb->data);
-		if (i == 0) {
-			data = nldata;
-			memcpy(data->name, s->name, NFLUA_NAME_MAXSIZE);
-			data->total = len;
-			frag = &data->frag;
-			flags &= ~(NFLM_F_INIT);
-		} else {
-			frag = nldata;
-		}
-
-		frag->seq = i;
-		frag->stateid = s->id;
-		frag->offset = offset;
-
-		memcpy(((char *)nldata) + hdrsize, payload + offset, plen);
-
-		if ((ret = nlmsg_send(s->sock, skb, pid, group)) < 0)
-			return ret;
-
-		offset += plen;
+	if ((ret = nflua_get_skb(&skb, s->dseqnum, NFLMSG_DATA, flags,
+		size, GFP_ATOMIC)) < 0) {
+		pr_err("could not alloc data packet\n");
+		return ret;
 	}
 
-	return 0;
+	data = nlmsg_data((struct nlmsghdr *)skb->data);
+	data->total = len;
+	memcpy(data->name, s->name, NFLUA_NAME_MAXSIZE);
+	memcpy(((char *)data) + hdrsize, payload, len);
+
+	ret = nlmsg_send(s->sock, skb, pid, group);
+	return ret < 0 ? ret : 0;
 }
 
 static int nflua_create_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
@@ -361,7 +325,6 @@ static int list_iter(struct nflua_state *state, unsigned short total,
 				NLMSG_ALIGN(sizeof(struct nflua_nl_fragment)));
 		}
 
-		frag->stateid = 0;
 		frag->offset = lcursor->offset;
 
 		lcursor->cursor.count = 0;
@@ -433,11 +396,17 @@ static int nflua_doexec(lua_State *L)
 	return 0;
 }
 
-static int nflua_exec(struct nflua_state *s, u32 pid,
+static int nflua_exec(struct xt_lua_net *xt_lua, u32 pid,
 		struct nflua_client *client)
 {
 	struct nflua_frag_request *req = &client->request;
+	struct nflua_state *s;
 	int error = 0;
+
+	if ((s = nflua_state_lookup(xt_lua, client->request.name)) == NULL) {
+		pr_err("lua state not found\n");
+		return -ENOENT;
+	}
 
 	spin_lock_bh(&s->lock);
 	if (s->L == NULL) {
@@ -538,13 +507,8 @@ static int nflua_handle_frag(struct xt_lua_net *xt_lua,
 		struct nflua_nl_fragment *frag, size_t datalen)
 {
 	struct sk_buff *oskb;
-	struct nflua_state *s;
-	size_t unfragmax;
+	size_t unfragmax = NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_script));
 	int ret;
-
-	unfragmax = nlh->nlmsg_type == NFLMSG_EXECUTE ?
-		NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_script)) :
-		NFLUA_PAYLOAD_SIZE(sizeof(struct nflua_nl_data));
 
 	if (nlh->nlmsg_flags & NFLM_F_MULTI) {
 		if ((ret = nflua_reassembly(client, frag, datalen)) < 0) {
@@ -563,28 +527,18 @@ static int nflua_handle_frag(struct xt_lua_net *xt_lua,
 		goto out;
 	}
 
-	if ((s = nflua_state_lookup(xt_lua, client->request.name)) == NULL) {
-		pr_err("lua state not found\n");
-		ret = -ENOENT;
-		goto out;
-	}
-
-	if ((ret = nflua_exec(s, nlh->nlmsg_pid, client)) < 0) {
+	if ((ret = nflua_exec(xt_lua, nlh->nlmsg_pid, client)) < 0) {
 		pr_err("could not execute / load data!\n");
 		goto out;
 	}
 
-	if (nlh->nlmsg_type == NFLMSG_EXECUTE) {
-		if ((ret = nflua_get_skb(&oskb, nlh->nlmsg_seq, NFLMSG_EXECUTE,
-					NFLM_F_DONE, 0, GFP_KERNEL)) < 0) {
-			pr_err("could not alloc replying packet\n");
-			goto out;
-		}
-
-		ret = nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
-	} else {
-		ret = 0;
+	if ((ret = nflua_get_skb(&oskb, nlh->nlmsg_seq, NFLMSG_EXECUTE,
+				NFLM_F_DONE, 0, GFP_KERNEL)) < 0) {
+		pr_err("could not alloc replying packet\n");
+		goto out;
 	}
+
+	ret = nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
 
 out:
 	clear_request(client);
@@ -656,60 +610,32 @@ static int nflua_data_op(struct xt_lua_net *xt_lua, struct sk_buff *skb,
 		struct nflua_client *client)
 {
 	struct nlmsghdr *nlh = (struct nlmsghdr *)skb->data;
-	struct nflua_nl_data *cmd;
-	struct nflua_nl_fragment *frag;
-	size_t datalen;
+	struct nflua_nl_data *cmd = nlmsg_data(nlh);
+	size_t mlen = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nflua_nl_data));
+	int ret;
 
 	pr_debug("received NFLMSG_DATA command\n");
 
-	if (nlh->nlmsg_flags & NFLM_F_INIT) {
-		if (client->request.fragseq != 0) {
-			pr_err("Non expected NFLMSG_DATA init\n");
-			return -EPROTO;
-		}
-
-		cmd = nlmsg_data(nlh);
-		if (cmd->total > NFLUA_DATA_MAXSIZE) {
-			pr_err("payload larger than allowed\n");
-			return -EMSGSIZE;
-		} else if (cmd->frag.seq != 0 || cmd->frag.offset != 0) {
-			pr_err("invalid NFLMSG_DATA fragment\n");
-			return -EPROTO;
-		}
-
-		frag = &cmd->frag;
-		datalen = nlh->nlmsg_len
-			- NLMSG_SPACE(sizeof(struct nflua_nl_data));
-
-		init_request(client,
-			     cmd->total,
-			     cmd->total > NFLUA_DATA_FRAG_SIZE,
-			     ((char *)nlmsg_data(nlh))
-			     + NLMSG_ALIGN(sizeof(struct nflua_nl_data)));
-
-		memcpy(client->request.name, cmd->name, NFLUA_NAME_MAXSIZE);
-
-	} else {
-		frag = nlmsg_data(nlh);
-		if ((frag->seq - 1) != client->request.fragseq) {
-			pr_err("NFLMSG_DATA fragment out of order\n");
-			clear_request(client);
-			return -EPROTO;
-		} else if (frag->offset != client->request.offset) {
-			pr_err("Invalid NFLMSG_DATA message."
-			       "Expected offset: %ld but got %d\n",
-				client->request.offset, frag->offset);
-			clear_request(client);
-			return -EMSGSIZE;
-		}
-
-		datalen = nlh->nlmsg_len
-			- NLMSG_SPACE(sizeof(struct nflua_nl_fragment));
-
-		client->request.fragseq++;
+	if (nlh->nlmsg_flags != (NFLM_F_REQUEST | NFLM_F_DONE)) {
+		pr_err("Malformed NFLMSG_DATA\n");
+		return -EPROTO;
 	}
 
-	return nflua_handle_frag(xt_lua, client, nlh, frag, datalen);
+	if (cmd->total > NFLUA_DATA_MAXSIZE || cmd->total != mlen) {
+		pr_err("invalid payload size\n");
+		return -EMSGSIZE;
+	}
+
+	init_request(client, cmd->total, false,
+		((char *)cmd) + NLMSG_ALIGN(sizeof(struct nflua_nl_data)));
+
+	memcpy(client->request.name, cmd->name, NFLUA_NAME_MAXSIZE);
+
+	if ((ret = nflua_exec(xt_lua, nlh->nlmsg_pid, client)) < 0)
+		pr_err("could not execute / load data!\n");
+
+	clear_request(client);
+	return ret;
 }
 
 static inline int nflua_unknown_op(struct sk_buff *skb)

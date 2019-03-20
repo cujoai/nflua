@@ -46,19 +46,10 @@ struct nflua_control {
     uint8_t buffer[NFLUA_PAYLOAD_MAXSIZE];
 };
 
-struct nflua_data_frag {
-    int32_t stateid;
-    uint32_t mseq;
-    uint32_t fseq;
-    size_t offset;
-    size_t total;
-};
-
 struct nflua_data {
     int fd;
     uint32_t pid;
     uint32_t seqnum;
-    struct nflua_data_frag request;
     char state[NFLUA_NAME_MAXSIZE];
     char buffer[NFLUA_PAYLOAD_MAXSIZE];
 };
@@ -121,7 +112,6 @@ void nflua_data_close(struct nflua_data *dch);
 int nflua_data_send(struct nflua_data *dch, const char *name,
         const char *payload, size_t len);
 
-int nflua_data_receive(struct nflua_data *dch, size_t *total_size,
-        char *state, char *buffer);
+int nflua_data_receive(struct nflua_data *dch, char *state, char *buffer);
 
 #endif /* NFLUA_H */

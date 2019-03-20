@@ -33,7 +33,6 @@ struct nflua_state {
 	struct sock *sock;
 	spinlock_t lock;
 	refcount_t users;
-	int id;
 	u32 dseqnum;
 	size_t maxalloc;
 	size_t curralloc;

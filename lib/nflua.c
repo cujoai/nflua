@@ -356,8 +356,6 @@ int nflua_data_send(struct nflua_data *dch, const char *name,
     struct nlmsghdr nlh;
     struct nflua_nl_data cmd;
     struct iovec iov[3];
-    size_t offset;
-    int ret;
 
     if (name == NULL || payload == NULL || len == 0 || len > NFLUA_DATA_MAXSIZE)
         return -EPERM;
@@ -365,93 +363,44 @@ int nflua_data_send(struct nflua_data *dch, const char *name,
     nlh.nlmsg_type = NFLMSG_DATA;
     nlh.nlmsg_seq = ++(dch->seqnum);
     nlh.nlmsg_pid = dch->pid;
-    nlh.nlmsg_flags = NFLM_F_REQUEST | NFLM_F_INIT;
-
-    offset = MIN(len, NFLUA_DATA_FRAG_SIZE);
-    nlh.nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_data)) + offset;
-    nlh.nlmsg_flags |= (offset < len) ? NFLM_F_MULTI : NFLM_F_DONE;
+    nlh.nlmsg_flags = NFLM_F_REQUEST | NFLM_F_DONE;
+    nlh.nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_data)) + len;
 
     memset(&cmd, 0, sizeof(struct nflua_nl_data));
     memcpy(cmd.name, name, strnlen(name, NFLUA_NAME_MAXSIZE));
     cmd.total = len;
-    cmd.frag.seq = 0;
-    cmd.frag.offset = 0;
 
     iov[0].iov_base = &nlh;
     iov[0].iov_len = NLMSG_HDRLEN;
     iov[1].iov_base = &cmd;
     iov[1].iov_len = NLMSG_ALIGN(sizeof(struct nflua_nl_data));
     iov[2].iov_base = (void *)payload;
-    iov[2].iov_len = offset;
+    iov[2].iov_len = len;
 
-    if ((ret = sendcmd(dch->fd, iov, 3)) < 0)
-        return ret;
-
-    if (offset < len) {
-        nlh.nlmsg_flags &= ~(NFLM_F_INIT);
-        ret = send_fragments(&nlh, dch->fd, payload, len, offset,
-                NFLUA_DATA_FRAG_SIZE);
-    }
-
-    return ret;
+    return sendcmd(dch->fd, iov, 3);
 }
 
-static int handle_data_msg(struct nflua_data *dch, size_t *ts, char *state,
-        char *buffer, struct nlmsghdr *nlh)
+static int handle_data_msg(char *state, char *buffer, struct nlmsghdr *nlh)
 {
-    struct nflua_nl_data *cmd;
-    struct nflua_nl_fragment *frag;
-    size_t datalen;
-    char *payload;
+    struct nflua_nl_data *cmd = NLMSG_DATA(nlh);
+    size_t datalen = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nflua_nl_data));
+    char *payload = ((char *)nlh) + NLMSG_SPACE(sizeof(struct nflua_nl_data));
 
-    if (nlh->nlmsg_flags & NFLM_F_INIT) {
-        cmd = NLMSG_DATA(nlh);
-        if (cmd->total > NFLUA_DATA_MAXSIZE)
-            return -EMSGSIZE;
-        else if (cmd->frag.seq != 0 || cmd->frag.offset != 0)
+    if (nlh->nlmsg_flags != (NFLM_F_REQUEST | NFLM_F_DONE))
             return -EPROTO;
 
-        frag = &cmd->frag;
-
-        payload = ((char *)nlh) + NLMSG_SPACE(sizeof(struct nflua_nl_data));
-        datalen = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nflua_nl_data));
-
-        dch->request.mseq = nlh->nlmsg_seq;
-        dch->request.fseq = 0;
-        dch->request.offset = 0;
-        dch->request.total = cmd->total;
-        dch->request.stateid = cmd->frag.stateid;
-        strncpy(dch->state, cmd->name, NFLUA_NAME_MAXSIZE);
-    } else {
-        frag = NLMSG_DATA(nlh);
-        if (nlh->nlmsg_seq != dch->request.mseq ||
-            (frag->seq - 1) != dch->request.fseq ||
-            frag->stateid != dch->request.stateid ||
-            frag->offset != dch->request.offset) {
-            return -EPROTO;
-        }
-
-        payload = ((char *)nlh) + NLMSG_SPACE(sizeof(struct nflua_nl_fragment));
-        datalen = nlh->nlmsg_len - NLMSG_SPACE(sizeof(struct nflua_nl_fragment));
-
-        dch->request.fseq++;
-    }
-
-    if (dch->request.offset + datalen > dch->request.total)
+    if (cmd->total > NFLUA_DATA_MAXSIZE || cmd->total != datalen)
         return -EMSGSIZE;
 
-    *ts = dch->request.total;
     memcpy(buffer, payload, datalen);
-    dch->request.offset += datalen;
 
     if (state != NULL)
-        strncpy(state, dch->state, NFLUA_NAME_MAXSIZE);
+        strncpy(state, cmd->name, NFLUA_NAME_MAXSIZE);
 
     return datalen;
 }
 
-int nflua_data_receive(struct nflua_data *dch, size_t *total_size,
-        char *state, char *buffer)
+int nflua_data_receive(struct nflua_data *dch, char *state, char *buffer)
 {
     struct iovec iov = {dch->buffer, NFLUA_PAYLOAD_MAXSIZE};
     struct sockaddr_nl sa;
@@ -459,7 +408,7 @@ int nflua_data_receive(struct nflua_data *dch, size_t *total_size,
     struct nlmsghdr *nh;
     ssize_t len, ret = -EBADMSG;
 
-    if (total_size == NULL || buffer == NULL)
+    if (buffer == NULL)
         return -EINVAL;
 
     if ((len = recvmsg(dch->fd, &msg, 0)) < 0)
@@ -469,7 +418,7 @@ int nflua_data_receive(struct nflua_data *dch, size_t *total_size,
     for (; NLMSG_OK(nh, len); nh = NLMSG_NEXT(nh, len)) {
         if (nh->nlmsg_type != NFLMSG_DATA)
             return -EPROTO;
-        if ((ret = handle_data_msg(dch, total_size, state, buffer, nh)) < 0)
+        if ((ret = handle_data_msg(state, buffer, nh)) < 0)
             break;
     }
 

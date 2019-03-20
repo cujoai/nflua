@@ -44,15 +44,9 @@ local function receiveall(s)
 end
 
 local function datareceive(s)
-	local total, state
 	local buff = data.new(nflua.datamaxsize)
-	local offset = 0
-	repeat
-		local recv
-		recv, total, state = assert(s:receive(buff, offset))
-		offset = offset + recv
-	until offset >= total
-	return buff:segment(0, total), state
+	local recv, state = assert(s:receive(buff, 0))
+	return buff:segment(0, recv), state
 end
 
 local function run(s, cmd, ...)
@@ -365,10 +359,6 @@ test('data.send', function()
 	compare(tostring(buff), token)
 	compare(state, 'st')
 
-	token = gentoken(nflua.fragsize + 1)
-	compare(s:send('st', data.new(token)), true)
-	compare(tostring(datareceive(s)), token)
-
 	token = gentoken(nflua.datamaxsize + 1)
 	local ok, err = s:send('st', data.new(token))
 	compare(ok, nil)
@@ -382,7 +372,7 @@ end)
 test('data.receive', function()
 	local c = assert(nflua.control())
 	local s = assert(nflua.data())
-	run(c, 'create', 'st')
+	run(c, 'create', 'st', 256 * 1024)
 
 	local ok, err = pcall(s.receive, s, 0, 0)
 	compare(ok, false)

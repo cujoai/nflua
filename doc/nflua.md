@@ -44,7 +44,7 @@ The number `port` is interpreted just like in function [`nflua.control`](#contro
 
 ### `nflua.datamaxsize`
 
-Integer constant that represents the maximum number of bytes transmitted in a single data stream.
+Integer constant that represents the maximum number of bytes transmitted in a single data message.
 
 ### `nflua.defaultmaxallocbytes`
 
@@ -52,7 +52,7 @@ Integer constant that represents the default maximum number of bytes that each s
 
 ### `nflua.fragsize`
 
-Integer constant that represents the maximum number of bytes transmitted in a single data message.
+Integer constant that represents the maximum number of bytes transmitted in a script fragment.
 
 ### `nflua.maxstates`
 
@@ -140,8 +140,8 @@ Returns the port ID number of data socket `data`.
 
 Sends data from the LuaData object `buffer` using socket `data` to the Lua state with name `state` in NFLua kernel module.
 
-### `recv, totalrecv, state = data:receive(buffer, offset)`
+### `recv, state = data:receive(buffer, offset)`
 
-Receives a chunk of data in the LuaData object `buffer` starting at the given `offset` (integer).
-There should be at least `nflua.fragsize` bytes available in `buffer` to receive a chunk of the message.
-Returns the number of bytes read, the total number of bytes in the stream, and the state that sent the message.
+Receives a data message in the LuaData object `buffer` starting at the given `offset` (integer).
+There should be at least `nflua.datamaxsize` bytes available in `buffer` to receive a chunk of the message.
+Returns the number of bytes read and the state that sent the message.
