@@ -22,7 +22,7 @@
 
 #include <sys/user.h>
 #include <stdint.h>
-#include "netlink.h"
+#include <netlink_common.h>
 
 enum nflua_control_state {
     NFLUA_LINK_READY,

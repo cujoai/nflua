@@ -16,41 +16,26 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef _XT_LUA_H
-#define _XT_LUA_H
+#ifndef _XT_LUA_COMMON_H
+#define _XT_LUA_COMMON_H
 
-#include "xt_lua_common.h"
-#include "luautil.h"
+#include <linux/types.h>
 
-#define XT_LUA_HASH_BUCKETS (32)
+#include "nfluaconf.h"
 
-struct sock;
-struct xt_lua_net {
-	struct sock *sock;
-	spinlock_t client_lock;
-	spinlock_t state_lock;
-	atomic_t state_count;
-	struct hlist_head client_table[XT_LUA_HASH_BUCKETS];
-	struct hlist_head state_table[XT_LUA_HASH_BUCKETS];
-};
-
-struct net;
-struct xt_lua_net *xt_lua_pernet(struct net *net);
-
-extern luaU_id nflua_ctx;
+struct nflua_state;
 
 enum {
-	NFLUA_MATCH,
-	NFLUA_TARGET
+	XT_NFLUA_TCP_PAYLOAD = 0x01
 };
 
-struct nflua_ctx {
-	struct sk_buff *skb;
-	struct xt_action_param *par;
-	int frame;
-	int packet;
-	int mode;
-	struct sk_buff **lskb;
+struct xt_lua_mtinfo {
+	char name[NFLUA_NAME_MAXSIZE];
+	char func[NFLUA_NAME_MAXSIZE];
+	__u8 flags;
+
+	/* kernel only */
+	struct nflua_state *state  __attribute__((aligned(8)));
 };
 
-#endif
+#endif /* _XT_LUA_COMMON_H */

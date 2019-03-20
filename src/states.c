@@ -37,7 +37,7 @@ extern int luaopen_data(lua_State* L);
 
 static inline int name_hash(void *salt, const char *name)
 {
-	return full_name_hash(salt, name, strnlen(name, XT_LUA_STATENAME_SIZE)) &
+	return full_name_hash(salt, name, strnlen(name, NFLUA_NAME_MAXSIZE)) &
 		(XT_LUA_HASH_BUCKETS - 1);
 }
 
@@ -52,7 +52,7 @@ struct nflua_state *nflua_state_lookup(struct xt_lua_net *xt_lua,
 
 	head = &xt_lua->state_table[name_hash(xt_lua, name)];
 	hlist_for_each_entry_rcu(state, head, node) {
-		if (!strncmp(state->name, name, XT_LUA_STATENAME_SIZE))
+		if (!strncmp(state->name, name, NFLUA_NAME_MAXSIZE))
 			return state;
 	}
 	return NULL;

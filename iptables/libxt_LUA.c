@@ -20,7 +20,7 @@
 #include <string.h>
 #include <xtables.h>
 
-#include <xt_lua.h>
+#include <xt_lua_common.h>
 
 enum {
 	O_STATE,
@@ -59,8 +59,8 @@ nflua_tg_print(const void *ip, const struct xt_entry_target *target, int numeric
 	((void) numeric);
         struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) target->data;
 
-	printf(" LUA state:%.*s", XT_LUA_STATENAME_SIZE - 1, info->name);
-	printf(" function:%.*s", XT_LUA_FUNCNAME_SIZE - 1, info->func);
+	printf(" LUA state:%.*s", NFLUA_NAME_MAXSIZE - 1, info->name);
+	printf(" function:%.*s", NFLUA_NAME_MAXSIZE - 1, info->func);
 }
 
 static void
@@ -69,8 +69,8 @@ nflua_tg_save(const void *ip, const struct xt_entry_target *target)
 	((void) ip);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) target->data;
 
-	printf(" --state %.*s", XT_LUA_STATENAME_SIZE - 1, info->name);
-	printf(" --function %.*s", XT_LUA_FUNCNAME_SIZE - 1, info->func);
+	printf(" --state %.*s", NFLUA_NAME_MAXSIZE - 1, info->name);
+	printf(" --function %.*s", NFLUA_NAME_MAXSIZE - 1, info->func);
 }
 
 static int
@@ -80,8 +80,8 @@ nflua_tg_xlate(struct xt_xlate *xl, const struct xt_xlate_tg_params *params)
 		(struct xt_lua_mtinfo *)params->target->data;
 
 	xt_xlate_add(xl, " state %.*s function %.*s",
-			XT_LUA_STATENAME_SIZE - 1, info->name,
-			XT_LUA_FUNCNAME_SIZE - 1, info->func);
+			NFLUA_NAME_MAXSIZE - 1, info->name,
+			NFLUA_NAME_MAXSIZE - 1, info->func);
 
 	return 1;
 }

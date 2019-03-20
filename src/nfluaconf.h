@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2017-2019 CUJO LLC
+ * Copyright (C) 2019 CUJO LLC
  *
  * This program is free software; you can redistribute it and/or
  * modify it under the terms of the GNU General Public License
@@ -16,41 +16,15 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
  */
 
-#ifndef _XT_LUA_H
-#define _XT_LUA_H
+#ifndef _NFLUA_CONF_H
+#define _NFLUA_CONF_H
 
-#include "xt_lua_common.h"
-#include "luautil.h"
+#ifndef NETLINK_NFLUA
+#define NETLINK_NFLUA      31     /* NFLua netlink protocol family */
+#endif /* NETLINK_NFLUA */
 
-#define XT_LUA_HASH_BUCKETS (32)
+#define NFLUA_NAME_MAXSIZE 64     /* Max length of Lua state name  */
 
-struct sock;
-struct xt_lua_net {
-	struct sock *sock;
-	spinlock_t client_lock;
-	spinlock_t state_lock;
-	atomic_t state_count;
-	struct hlist_head client_table[XT_LUA_HASH_BUCKETS];
-	struct hlist_head state_table[XT_LUA_HASH_BUCKETS];
-};
+#define NFLUA_SCRIPTNAME_MAXSIZE 255   /* Max length of Lua state name  */
 
-struct net;
-struct xt_lua_net *xt_lua_pernet(struct net *net);
-
-extern luaU_id nflua_ctx;
-
-enum {
-	NFLUA_MATCH,
-	NFLUA_TARGET
-};
-
-struct nflua_ctx {
-	struct sk_buff *skb;
-	struct xt_action_param *par;
-	int frame;
-	int packet;
-	int mode;
-	struct sk_buff **lskb;
-};
-
-#endif
+#endif /* _NFLUA_CONF_H */

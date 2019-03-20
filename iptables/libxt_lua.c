@@ -21,7 +21,7 @@
 #include <getopt.h>
 
 #include <xtables.h>
-#include <xt_lua.h>
+#include <xt_lua_common.h>
 
 enum {
 	O_STATE       = 0x01,
@@ -48,10 +48,10 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 	switch (c) {
 	case O_STATE:
-		if (strlen(optarg) >= XT_LUA_STATENAME_SIZE) {
+		if (strlen(optarg) >= NFLUA_NAME_MAXSIZE) {
 			xtables_error(PARAMETER_PROBLEM,
 				"'--state' is too long (max: %u)",
-				XT_LUA_STATENAME_SIZE - 1);
+				NFLUA_NAME_MAXSIZE - 1);
 		}
 
 		strcpy(info->name, optarg);
@@ -59,10 +59,10 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 		*flags |= O_STATE;
 		break;
 	case O_FUNCTION:
-		if (strlen(optarg) >= XT_LUA_FUNCNAME_SIZE) {
+		if (strlen(optarg) >= NFLUA_NAME_MAXSIZE) {
 			xtables_error(PARAMETER_PROBLEM,
 				"'--function' is too long (max: %u)",
-				XT_LUA_FUNCNAME_SIZE - 1);
+				NFLUA_NAME_MAXSIZE - 1);
 		}
 
 		strcpy(info->func, optarg);
@@ -101,8 +101,8 @@ nflua_print(const void *ip, const struct xt_entry_match *match, int numeric)
 	((void) numeric);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
 
-	printf(" lua state:%.*s", XT_LUA_STATENAME_SIZE - 1, info->name);
-	printf(" function:%.*s", XT_LUA_FUNCNAME_SIZE - 1, info->func);
+	printf(" lua state:%.*s", NFLUA_NAME_MAXSIZE - 1, info->name);
+	printf(" function:%.*s", NFLUA_NAME_MAXSIZE - 1, info->func);
 
 	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
 		printf(" tcp-payload");
@@ -114,8 +114,8 @@ nflua_save(const void *ip, const struct xt_entry_match *match)
 	((void) ip);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
 
-	printf(" --state %.*s", XT_LUA_STATENAME_SIZE - 1, info->name);
-	printf(" --function %.*s", XT_LUA_FUNCNAME_SIZE - 1, info->func);
+	printf(" --state %.*s", NFLUA_NAME_MAXSIZE - 1, info->name);
+	printf(" --function %.*s", NFLUA_NAME_MAXSIZE - 1, info->func);
 
 	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
 		printf(" --tcp-payload");
