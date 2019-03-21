@@ -188,18 +188,21 @@ int nflua_state_destroy(struct xt_lua_net *xt_lua, const char *name)
 	return 0;
 }
 
-int nflua_state_list(struct xt_lua_net *xt_lua, nflua_state_cb cb, void *data)
+int nflua_state_list(struct xt_lua_net *xt_lua, nflua_state_cb cb,
+	unsigned short *total)
 {
 	struct hlist_head *head;
 	struct nflua_state *s;
-	int i, total, ret = 0;
+	int i, ret = 0;
 
 	spin_lock_bh(&xt_lua->state_lock);
-	total = atomic_read(&xt_lua->state_count);
+
+	*total = atomic_read(&xt_lua->state_count);
+
 	for (i = 0; i < XT_LUA_HASH_BUCKETS; i++) {
 		head = &xt_lua->state_table[i];
 		hlist_for_each_entry_rcu(s, head, node) {
-			if ((ret = cb(s, total, data)) != 0)
+			if ((ret = cb(s, total)) != 0)
 				goto out;
 		}
 	}

@@ -34,23 +34,26 @@
         - NLMSG_SPACE(sizeof(header))) \
         / sizeof(struct nflua_nl_state)))
 
-#define STATES_IN_1ST_FRAG	STATES_PER_FRAG(struct nflua_nl_list)
-#define STATES_IN_FRAG		STATES_PER_FRAG(struct nflua_nl_fragment)
+#define INIT_FRAG_MAX_STATES	STATES_PER_FRAG(struct nflua_nl_list)
+#define FRAG_MAX_STATES 	STATES_PER_FRAG(struct nflua_nl_fragment)
+
+#define STATE_OFFSET(hdrptr, hdrsz) \
+	((struct nflua_nl_state *)((char *)hdrptr + NLMSG_ALIGN(hdrsz)))
 
 #define DATA_RECV_FUNC "__receive_callback"
 
-struct state_cursor {
+struct list_frag {
 	struct nflua_nl_state *state;
-	unsigned short count;
+	unsigned short offset;
+	unsigned short total;
 };
 
 struct list_cursor {
 	struct sock *sock;
 	struct nlmsghdr *nlh;
 	struct sk_buff *oskb;
-	struct state_cursor cursor;
-	unsigned short count;
-	unsigned short offset;
+	struct list_frag frag;
+	unsigned short curr;
 	unsigned short total;
 };
 
@@ -138,21 +141,6 @@ static void client_destroy(struct xt_lua_net *xt_lua, u32 pid)
 	mutex_unlock(&client->lock);
 
 	kfree(client);
-}
-
-static int write_state(struct nflua_state *s, struct state_cursor *c)
-{
-	struct nflua_nl_state *state = c->state + c->count;
-	size_t namelen = strnlen(s->name, NFLUA_NAME_MAXSIZE);
-
-	memset(state, 0, sizeof(struct nflua_nl_state));
-	memcpy(&state->name, s->name, namelen);
-	state->maxalloc  = s->maxalloc;
-	state->curralloc = s->curralloc;
-
-	c->count++;
-
-	return 0;
 }
 
 static int nflua_get_skb(struct sk_buff **skb, u32 seq, u16 type, int flags,
@@ -259,97 +247,102 @@ static int nflua_destroy_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
 	return nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
 }
 
-static int list_iter(struct nflua_state *state, unsigned short total,
-		void *data)
+static void init_list_hdr(struct list_cursor *lc)
 {
-	struct list_cursor *lcursor = data;
+	struct nlmsghdr *onlh = (struct nlmsghdr *)lc->oskb->data;
 	struct nflua_nl_list *list;
 	struct nflua_nl_fragment *frag;
-	struct nlmsghdr *onlh;
-	struct sk_buff *skb;
-	int flags;
-	int ret;
-	unsigned short missing;
+
+	if (lc->frag.offset == 0) {
+		list = nlmsg_data(onlh);
+		list->total = lc->total;
+
+		frag = &list->frag;
+		frag->seq = 0;
+
+		lc->frag.state =
+			STATE_OFFSET(list, sizeof(struct nflua_nl_list));
+	} else {
+		frag = nlmsg_data(onlh);
+		frag->seq = (unsigned int)
+			((INIT_FRAG_MAX_STATES - lc->frag.offset)
+				/ FRAG_MAX_STATES) + 1;
+
+		lc->frag.state =
+			STATE_OFFSET(frag, sizeof(struct nflua_nl_fragment));
+	}
+
+	frag->offset = lc->frag.offset;
+}
+
+static int init_list_skb(struct list_cursor *lc)
+{
+	int flags, ret;
+	unsigned short missing = lc->total - lc->curr;
 	size_t skblen;
 
-	/* packet initialized? */
-	if (lcursor->oskb == NULL) {
-		if (lcursor->total != total)
-			lcursor->total = total;
+	lc->frag.offset = lc->curr;
 
-		missing = (unsigned short)(total - lcursor->offset);
-
-		if (lcursor->offset == 0) {
-			skblen = NLMSG_ALIGN(sizeof(struct nflua_nl_list));
-			flags = NFLM_F_INIT;
-			flags |= (total > STATES_IN_1ST_FRAG) ? NFLM_F_MULTI : 0;
-			lcursor->count = min(missing, STATES_IN_1ST_FRAG);
-
-		} else {
-			skblen = NLMSG_ALIGN(sizeof(struct nflua_nl_fragment));
-			flags = NFLM_F_MULTI;
-			lcursor->count = min(missing, STATES_IN_FRAG);
-		}
-
-		skblen += (sizeof(struct nflua_nl_state) * lcursor->count);
-		if (lcursor->offset + lcursor->count >= total)
-			flags |= NFLM_F_DONE;
-
-		if ((ret = nflua_get_skb(&(lcursor->oskb),
-			lcursor->nlh->nlmsg_seq, NFLMSG_LIST, flags,
-			skblen,	GFP_KERNEL)) < 0) {
-			pr_err("couldn't alloc replying packet\n");
-			return ret;
-		}
-
-		onlh = (struct nlmsghdr *)lcursor->oskb->data;
-
-		if (lcursor->offset == 0) {
-			list = nlmsg_data(onlh);
-			list->total = lcursor->total;
-
-			frag = &list->frag;
-			frag->seq = 0;
-
-			lcursor->cursor.state =
-				(struct nflua_nl_state *)((char *)list +
-				NLMSG_ALIGN(sizeof(struct nflua_nl_list)));
-		} else {
-			frag = nlmsg_data(onlh);
-			frag->seq = (unsigned int)
-				((STATES_IN_1ST_FRAG - lcursor->offset)
-				/ STATES_IN_FRAG) + 1;
-
-			lcursor->cursor.state =
-				(struct nflua_nl_state *)((char *)frag +
-				NLMSG_ALIGN(sizeof(struct nflua_nl_fragment)));
-		}
-
-		frag->offset = lcursor->offset;
-
-		lcursor->cursor.count = 0;
+	if (lc->frag.offset == 0) {
+		skblen = NLMSG_ALIGN(sizeof(struct nflua_nl_list));
+		flags = NFLM_F_INIT;
+		flags |= (lc->total > INIT_FRAG_MAX_STATES) ? NFLM_F_MULTI : 0;
+		lc->frag.total = min(missing, INIT_FRAG_MAX_STATES);
+	} else {
+		skblen = NLMSG_ALIGN(sizeof(struct nflua_nl_fragment));
+		flags = NFLM_F_MULTI;
+		lc->frag.total = min(missing, FRAG_MAX_STATES);
 	}
 
-	/* write state attributes in packet */
-	if (state != NULL) {
-		write_state(state, &(lcursor->cursor));
-		lcursor->offset++;
+	flags |= lc->frag.offset + lc->frag.total >= lc->total ? NFLM_F_DONE : 0;
+
+	skblen += sizeof(struct nflua_nl_state) * lc->frag.total;
+	if ((ret = nflua_get_skb(&(lc->oskb), lc->nlh->nlmsg_seq, NFLMSG_LIST,
+				 flags, skblen, GFP_KERNEL)) < 0) {
+		return ret;
 	}
 
-	/* is the last state of this packet? */
-	if (lcursor->cursor.count == lcursor->count) {
-		skb = lcursor->oskb;
-		lcursor->oskb = NULL;
-
-		/* send packet and clean */
-		if ((ret = nlmsg_unicast(lcursor->sock, skb,
-						lcursor->nlh->nlmsg_pid)) != 0) {
-			pr_err("couldn't send reply packet. Error: %d\n", ret);
-			return ret;
-		}
-	}
+	init_list_hdr(lc);
 
 	return 0;
+}
+
+static void write_state(struct nflua_state *s, struct list_frag *f,
+	unsigned short curr)
+{
+	struct nflua_nl_state *nl_state = f->state + curr - f->offset;
+	size_t namelen = strnlen(s->name, NFLUA_NAME_MAXSIZE);
+
+	memset(nl_state, 0, sizeof(struct nflua_nl_state));
+	memcpy(&nl_state->name, s->name, namelen);
+	nl_state->maxalloc  = s->maxalloc;
+	nl_state->curralloc = s->curralloc;
+}
+
+static int list_iter(struct nflua_state *state, unsigned short *data)
+{
+	struct list_cursor *lc = container_of(data, struct list_cursor, total);
+	struct sk_buff *skb;
+	int ret;
+
+	if (lc->oskb == NULL && (ret = init_list_skb(lc)) < 0) {
+		pr_err("couldn't alloc replying packet\n");
+		return ret;
+	}
+
+	if (state)
+		write_state(state, &lc->frag, lc->curr++);
+
+	if (lc->curr < lc->frag.offset + lc->frag.total)
+		return 0;
+
+	skb = lc->oskb;
+	lc->oskb = NULL;
+
+	if ((ret = nlmsg_unicast(lc->sock, skb, lc->nlh->nlmsg_pid)) != 0)
+		pr_err("couldn't send reply packet. Error: %d\n", ret);
+
+	return ret;
 }
 
 
@@ -360,26 +353,26 @@ static int nflua_list_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
 		.sock = xt_lua->sock,
 		.nlh = (struct nlmsghdr *)skb->data,
 		.oskb = NULL,
-		.cursor = {NULL, 0},
-		.count = 0,
-		.offset = 0,
+		.frag = {NULL, 0, 0},
+		.curr = 0,
 		.total = 0
 	};
 
 	pr_debug("received NFLMSG_LIST command\n");
 
-	if ((ret = nflua_state_list(xt_lua, &list_iter, &lcursor)) != 0) {
-		pr_err("error listing states\n");
-		return ret;
-	}
+	ret = nflua_state_list(xt_lua, &list_iter, &lcursor.total);
+	if (ret != 0)
+		goto out;
 
 	pr_debug("total number of states: %u\n", lcursor.total);
-
-	/* if list is empty send an empty reply */
 	if (lcursor.total == 0)
-		list_iter(NULL, 0, &lcursor);
+		ret = list_iter(NULL, &lcursor.total);
 
-	return 0;
+out:
+	if (ret != 0)
+		pr_err("error listing states\n");
+
+	return ret;
 }
 
 static int nflua_doexec(lua_State *L)

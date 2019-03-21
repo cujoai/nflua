@@ -39,8 +39,7 @@ struct nflua_state {
 	unsigned char name[NFLUA_NAME_MAXSIZE];
 };
 
-typedef int (*nflua_state_cb)(struct nflua_state *s, unsigned short total,
-        void *data);
+typedef int (*nflua_state_cb)(struct nflua_state *s, unsigned short *total);
 
 struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
         size_t maxalloc, const char *name);
@@ -51,7 +50,7 @@ struct nflua_state *nflua_state_lookup(struct xt_lua_net *xt_lua,
         const char *name);
 
 int nflua_state_list(struct xt_lua_net *xt_lua, nflua_state_cb cb,
-        void *data);
+	unsigned short *total);
 
 void nflua_state_destroy_all(struct xt_lua_net *xt_lua);
 
