@@ -21,13 +21,6 @@ local data = require'data'
 
 math.randomseed(os.time())
 
-local function compare(got, expected)
-	if got ~= expected then
-		local fmt = 'got: %s --- expected: %s'
-		error(string.format(fmt, tostring(got), tostring(expected)))
-	end
-end
-
 local function gentoken(n)
 	n = n or 16
 	local s = {}
@@ -50,7 +43,7 @@ local function datareceive(s)
 end
 
 local function run(s, cmd, ...)
-	compare(s[cmd](s, ...), true)
+	assert(s[cmd](s, ...) == true)
 	return assert(receiveall(s))
 end
 
@@ -66,7 +59,7 @@ local function test(name, f, ...)
 	collectgarbage()
 
 	assert(os.execute'sudo rmmod nflua')
-	assert(os.execute'sudo insmod ../src/nflua.ko')
+	assert(os.execute'sudo insmod ./src/nflua.ko')
 
 	print('testing', name)
 	f(...)
@@ -83,8 +76,8 @@ end
 
 local function kernelfail(s, msg)
 	local ok, err = receiveall(s)
-	compare(ok, nil)
-	compare(err, 'operation could not be completed')
+	assert(ok == nil)
+	assert(err == 'operation could not be completed')
 	matchdmesg(3, msg)
 end
 
@@ -113,8 +106,8 @@ local function socketclosed(socktype, cmd, ...)
 	local s = assert(nflua[socktype]())
 	s:close()
 	local ok, err = pcall(s[cmd], s, ...)
-	compare(ok, false)
-	compare(err, argerror(1, 'socket closed'))
+	assert(ok == false)
+	assert(err == argerror(1, 'socket closed'))
 end
 
 local cases = {
@@ -132,10 +125,10 @@ end
 
 local function doublesend(socktype, cmd, ...)
 	local s = assert(nflua[socktype]())
-	compare(s[cmd](s, ...), true)
+	assert(s[cmd](s, ...) == true)
 	local ok, err = s[cmd](s, ...)
-	compare(ok, nil)
-	compare(err, 'Operation not permitted')
+	assert(ok == nil)
+	assert(err == 'Operation not permitted')
 end
 
 local cases = {
@@ -151,23 +144,23 @@ end
 
 local function openclose(socktype)
 	local s = assert(nflua[socktype]())
-	compare(type(s), 'userdata')
-	compare(s:close(), true)
+	assert(type(s) == 'userdata')
+	assert(s:close() == true)
 
 	s = assert(nflua[socktype](123))
 	local ok, err = nflua[socktype](123)
-	compare(ok, nil)
-	compare(err, 'Address already in use')
+	assert(ok == nil)
+	assert(err == 'Address already in use')
 	s:close()
 
 	local fname = 'nflua.' .. socktype
 	local ok, err = pcall(nflua[socktype], 2 ^ 31)
-	compare(ok, false)
-	compare(err, argerror(1, "must be in range [0, 2^31)", fname))
+	assert(ok == false)
+	assert(err == argerror(1, "must be in range [0, 2^31)", fname))
 
 	local ok, err = pcall(nflua[socktype], 'a')
-	compare(ok, false)
-	compare(err, argerror(1, "must be integer or nil", fname))
+	assert(ok == false)
+	assert(err, argerror(1, "must be integer or nil" == fname))
 end
 
 for _, socktype in ipairs{'control', 'data'} do
@@ -178,7 +171,7 @@ local function getfd(socktype)
 	local s = assert(nflua[socktype]())
 
 	local fd = s:getfd()
-	compare(type(fd), 'number')
+	assert(type(fd) == 'number')
 end
 
 for _, socktype in ipairs{'control', 'data'} do
@@ -188,12 +181,12 @@ end
 local function getpid(socktype)
 	local s = assert(nflua[socktype]())
 	local pid = s:getpid()
-	compare(type(pid), 'number')
-	compare(pid & (2 ^ 31), 2 ^ 31)
+	assert(type(pid) == 'number')
+	assert(pid & (2 ^ 31) == 2 ^ 31)
 	s:close()
 
 	s = assert(nflua[socktype](123))
-	compare(s:getpid(), 123)
+	assert(s:getpid() == 123)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
@@ -202,7 +195,7 @@ end
 
 test('control.getstate', function()
 	local s = assert(nflua.control())
-	compare(s:getstate(), 'ready')
+	assert(s:getstate() == 'ready')
 end)
 
 test('control.create', function()
@@ -210,16 +203,16 @@ test('control.create', function()
 
 	run(s, 'create', 'st1')
 	local l = run(s, 'list')
-	compare(l[1].name, 'st1')
-	compare(l[1].maxalloc, nflua.defaultmaxallocbytes)
+	assert(l[1].name == 'st1')
+	assert(l[1].maxalloc == nflua.defaultmaxallocbytes)
 	run(s, 'destroy', 'st1')
 
 	run(s, 'create', 'st2', 128 * 1024)
 	local l = run(s, 'list')
-	compare(l[1].name, 'st2')
-	compare(l[1].maxalloc, 128 * 1024)
+	assert(l[1].name == 'st2')
+	assert(l[1].maxalloc == 128 * 1024)
 
-	compare(s:create('st2'), true)
+	assert(s:create('st2') == true)
 	kernelfail(s, 'state already exists: st2')
 	run(s, 'destroy', 'st2')
 
@@ -230,13 +223,13 @@ test('control.create', function()
 	for i = 1, n do
 		run(s, 'create', 'st' .. i)
 	end
-	compare(s:create('st' .. (n + 1)), true)
+	assert(s:create('st' .. (n + 1)) == true)
 	kernelfail(s, 'max states limit reached or out of memory')
 
 	local name = string.rep('a', 64)
 	local ok, err = pcall(s.create, s, name)
-	compare(ok, false)
-	compare(err, argerror(2, 'name too long'))
+	assert(ok == false)
+	assert(err == argerror(2, 'name too long'))
 end)
 
 test('allocation size', function()
@@ -245,7 +238,7 @@ test('allocation size', function()
 	local code = 'string.rep("a", 32 * 1024)'
 
 	run(s, 'create', 'st1')
-	compare(s:execute('st1', code), true)
+	assert(s:execute('st1', code) == true)
 	kernelfail(s, 'could not execute / load data!')
 
 	run(s, 'create', 'st2', 128 * 1024)
@@ -257,9 +250,9 @@ test('control.destroy', function()
 
 	run(s, 'create', 'st')
 	run(s, 'destroy', 'st')
-	compare(#run(s, 'list'), 0)
+	assert(#run(s, 'list') == 0)
 
-	compare(s:destroy('st'), true)
+	assert(s:destroy('st') == true)
 	kernelfail(s, 'could not destroy lua state')
 end)
 
@@ -270,16 +263,16 @@ test('control.destroy and iptables', function()
 	assert(os.execute([[
 		iptables -A INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
 	]]))
-	compare(s:destroy('st'), true)
+	assert(s:destroy('st') == true)
 	kernelfail(s, 'could not destroy lua state')
-	compare(#run(s, 'list'), 1)
+	assert(#run(s, 'list') == 1)
 
 	assert(os.execute([[
 		iptables -D INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
 	]]))
-	compare(s:destroy('st'), true)
-	compare(receiveall(s), true)
-	compare(#run(s, 'list'), 0)
+	assert(s:destroy('st') == true)
+	assert(receiveall(s) == true)
+	assert(#run(s, 'list') == 0)
 end)
 
 test('control.execute', function()
@@ -297,14 +290,14 @@ test('control.execute', function()
 	matchdmesg(4, token)
 
 	run(s, 'destroy', 'st')
-	compare(s:execute('st', 'print()'), true)
+	assert(s:execute('st', 'print()') == true)
 	kernelfail(s, 'lua state not found')
 
 	local bigstring = gentoken(64 * 1024)
 	local code = string.format('print(%q)', bigstring)
 	local ok, err = s:execute('st1', code)
-	compare(ok, nil)
-	compare(err, 'Operation not permitted')
+	assert(ok == nil)
+	assert(err == 'Operation not permitted')
 end)
 
 test('control.list', function()
@@ -320,25 +313,25 @@ test('control.list', function()
 	end
 
 	local l = run(s, 'list')
-	compare(#l, n)
+	assert(#l == n)
 	table.sort(l, function(a, b) return a.name < b.name end)
 	for i = 1, n do
-		compare(l[i].name, statename(i))
+		assert(l[i].name == statename(i))
 	end
 
 	for i = 1, n do
 		run(s, 'destroy', statename(i))
 	end
 
-	compare(#run(s, 'list'), 0)
+	assert(#run(s, 'list') == 0)
 end)
 
 test('control.receive', function()
 	local s = assert(nflua.control())
 
 	local ok, err = s:receive()
-	compare(ok, nil)
-	compare(err, 'Operation not permitted')
+	assert(ok == nil)
+	assert(err == 'Operation not permitted')
 end)
 
 test('data.send', function()
@@ -354,19 +347,19 @@ test('data.send', function()
 	local s = assert(nflua.data())
 
 	local token = gentoken()
-	compare(s:send('st', data.new(token)), true)
+	assert(s:send('st', data.new(token)) == true)
 	local buff, state = datareceive(s)
-	compare(tostring(buff), token)
-	compare(state, 'st')
+	assert(tostring(buff) == token)
+	assert(state == 'st')
 
 	token = gentoken(nflua.datamaxsize + 1)
 	local ok, err = s:send('st', data.new(token))
-	compare(ok, nil)
-	compare(err, 'Operation not permitted')
+	assert(ok == nil)
+	assert(err == 'Operation not permitted')
 
 	local ok, err = pcall(s.send, s, 'st', 0)
-	compare(ok, false)
-	compare(err, argerror(3, 'expected ldata object'))
+	assert(ok == false)
+	assert(err == argerror(3, 'expected ldata object'))
 end)
 
 test('data.receive', function()
@@ -375,8 +368,8 @@ test('data.receive', function()
 	run(c, 'create', 'st', 256 * 1024)
 
 	local ok, err = pcall(s.receive, s, 0, 0)
-	compare(ok, false)
-	compare(err, argerror(2, 'expected ldata object'))
+	assert(ok == false)
+	assert(err == argerror(2, 'expected ldata object'))
 
 	c:execute('st', string.format([[
 		local nf = require'nf'
