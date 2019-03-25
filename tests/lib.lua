@@ -19,67 +19,7 @@
 local nflua = require'nflua'
 local data = require'data'
 
-math.randomseed(os.time())
-
-local function gentoken(n)
-	n = n or 16
-	local s = {}
-	for i = 1, n do
-		s[i] = math.random(0, 9)
-	end
-	return table.concat(s)
-end
-
-local function receiveall(s)
-	local ret
-	repeat ret = {s:receive()} until ret[2] ~= 'pending'
-	return table.unpack(ret)
-end
-
-local function datareceive(s)
-	local buff = data.new(nflua.datamaxsize)
-	local recv, state = assert(s:receive(buff, 0))
-	return buff:segment(0, recv), state
-end
-
-local function run(s, cmd, ...)
-	assert(s[cmd](s, ...) == true)
-	return assert(receiveall(s))
-end
-
-local function test(name, f, ...)
-	-- When nflua requires a module eg: "require('nf')" it creates
-	-- a kernel module dependency, so we need to explicit destroy the states.
-	local s = assert(nflua.control())
-	for _, state in ipairs(run(s, 'list')) do
-		run(s, 'destroy', state.name)
-	end
-	s:close()
-
-	collectgarbage()
-
-	assert(os.execute'sudo rmmod nflua')
-	assert(os.execute'sudo insmod ./src/nflua.ko')
-
-	print('testing', name)
-	f(...)
-end
-
-local function matchdmesg(n, str)
-	local p = assert(io.popen('dmesg | tail -' .. n), 'r')
-	local out = p:read'a'
-	p:close()
-	if string.match(out, str) ~= str then
-		error(str .. ' not found in ' .. out)
-	end
-end
-
-local function kernelfail(s, msg)
-	local ok, err = receiveall(s)
-	assert(ok == nil)
-	assert(err == 'operation could not be completed')
-	matchdmesg(3, msg)
-end
+local util = require 'tests.util'
 
 local function argerror(arg, msg, fname)
 	fname = fname or '?'
@@ -119,7 +59,7 @@ local cases = {
 for socktype, cmds in pairs(cases) do
 	for _, cmd in ipairs(cmds) do
 		local t = 'socketclosed ' .. socktype .. ' ' .. cmd
-		test(t, socketclosed, socktype, cmd, defaults(socktype, cmd))
+		util.test(t, socketclosed, socktype, cmd, defaults(socktype, cmd))
 	end
 end
 
@@ -138,7 +78,7 @@ local cases = {
 for socktype, cmds in pairs(cases) do
 	for _, cmd in ipairs(cmds) do
 		local t = 'doublesend ' .. socktype .. ' ' .. cmd
-		test(t, doublesend, socktype, cmd, defaults(socktype, cmd))
+		util.test(t, doublesend, socktype, cmd, defaults(socktype, cmd))
 	end
 end
 
@@ -164,7 +104,7 @@ local function openclose(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	test('openclose ' .. socktype, openclose, socktype)
+	util.test('openclose ' .. socktype, openclose, socktype)
 end
 
 local function getfd(socktype)
@@ -175,7 +115,7 @@ local function getfd(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	test('getfd ' .. socktype, getfd, socktype)
+	util.test('getfd ' .. socktype, getfd, socktype)
 end
 
 local function getpid(socktype)
@@ -190,41 +130,40 @@ local function getpid(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	test('getpid ' .. socktype, getpid, socktype)
+	util.test('getpid ' .. socktype, getpid, socktype)
 end
 
-test('control.getstate', function()
+util.test('control.getstate', function()
 	local s = assert(nflua.control())
 	assert(s:getstate() == 'ready')
 end)
 
-test('control.create', function()
+util.test('control.create', function()
 	local s = assert(nflua.control())
 
-	run(s, 'create', 'st1')
-	local l = run(s, 'list')
+	util.run(s, 'create', 'st1')
+	local l = util.run(s, 'list')
 	assert(l[1].name == 'st1')
 	assert(l[1].maxalloc == nflua.defaultmaxallocbytes)
-	run(s, 'destroy', 'st1')
+	util.run(s, 'destroy', 'st1')
 
-	run(s, 'create', 'st2', 128 * 1024)
-	local l = run(s, 'list')
+	util.run(s, 'create', 'st2', 128 * 1024)
+	local l = util.run(s, 'list')
 	assert(l[1].name == 'st2')
 	assert(l[1].maxalloc == 128 * 1024)
 
-	assert(s:create('st2') == true)
-	kernelfail(s, 'state already exists: st2')
-	run(s, 'destroy', 'st2')
+	util.failrun(s, 'state already exists: st2', 'create', 'st2')
+	util.run(s, 'destroy', 'st2')
 
-	run(s, 'create', 'st2')
-	run(s, 'destroy', 'st2')
+	util.run(s, 'create', 'st2')
+	util.run(s, 'destroy', 'st2')
 
 	local n = nflua.maxstates
 	for i = 1, n do
-		run(s, 'create', 'st' .. i)
+		util.run(s, 'create', 'st' .. i)
 	end
-	assert(s:create('st' .. (n + 1)) == true)
-	kernelfail(s, 'max states limit reached or out of memory')
+	util.failrun(s, 'max states limit reached or out of memory',
+		'create', 'st' .. (n + 1))
 
 	local name = string.rep('a', 64)
 	local ok, err = pcall(s.create, s, name)
@@ -232,75 +171,71 @@ test('control.create', function()
 	assert(err == argerror(2, 'name too long'))
 end)
 
-test('allocation size', function()
+util.test('allocation size', function()
 	local s = assert(nflua.control())
 
 	local code = 'string.rep("a", 32 * 1024)'
 
-	run(s, 'create', 'st1')
-	assert(s:execute('st1', code) == true)
-	kernelfail(s, 'could not execute / load data!')
+	util.run(s, 'create', 'st1')
+	util.failrun(s, 'could not execute / load data!',
+		'execute', 'st1', code)
 
-	run(s, 'create', 'st2', 128 * 1024)
-	run(s, 'execute', 'st2', code)
+	util.run(s, 'create', 'st2', 128 * 1024)
+	util.run(s, 'execute', 'st2', code)
 end)
 
-test('control.destroy', function()
+util.test('control.destroy', function()
 	local s = assert(nflua.control())
 
-	run(s, 'create', 'st')
-	run(s, 'destroy', 'st')
-	assert(#run(s, 'list') == 0)
+	util.run(s, 'create', 'st')
+	util.run(s, 'destroy', 'st')
+	assert(#util.run(s, 'list') == 0)
 
-	assert(s:destroy('st') == true)
-	kernelfail(s, 'could not destroy lua state')
+	util.failrun(s, 'could not destroy lua state', 'destroy', 'st')
 end)
 
-test('control.destroy and iptables', function()
+util.test('control.destroy and iptables', function()
 	local s = assert(nflua.control())
 
-	run(s, 'create', 'st')
+	util.run(s, 'create', 'st')
 	assert(os.execute([[
 		iptables -A INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
 	]]))
-	assert(s:destroy('st') == true)
-	kernelfail(s, 'could not destroy lua state')
-	assert(#run(s, 'list') == 1)
+	util.failrun(s, 'could not destroy lua state', 'destroy', 'st')
+	assert(#util.run(s, 'list') == 1)
 
 	assert(os.execute([[
 		iptables -D INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
 	]]))
-	assert(s:destroy('st') == true)
-	assert(receiveall(s) == true)
-	assert(#run(s, 'list') == 0)
+	util.run(s, 'destroy', 'st')
+	assert(#util.run(s, 'list') == 0)
 end)
 
-test('control.execute', function()
+util.test('control.execute', function()
 	local s = assert(nflua.control())
 
-	run(s, 'create', 'st')
-	local token = gentoken()
+	util.run(s, 'create', 'st')
+	local token = util.gentoken()
 	local code = string.format('print(%q)', token)
-	run(s, 'execute', 'st', code)
-	matchdmesg(4, token)
+	util.run(s, 'execute', 'st', code)
+	util.matchdmesg(4, token)
 
-	token = gentoken()
+	token = util.gentoken()
 	code = string.format('print(%q)', token)
-	run(s, 'execute', 'st', code, 'test.lua')
-	matchdmesg(4, token)
+	util.run(s, 'execute', 'st', code, 'test.lua')
+	util.matchdmesg(4, token)
 
-	run(s, 'destroy', 'st')
-	assert(s:execute('st', 'print()') == true)
-	kernelfail(s, 'lua state not found')
+	util.run(s, 'destroy', 'st')
+	util.failrun(s, 'lua state not found', 'execute', 'st', 'print()')
 
-	local bigstring = gentoken(64 * 1024)
+	local bigstring = util.gentoken(64 * 1024)
 	local code = string.format('print(%q)', bigstring)
 	local ok, err = s:execute('st1', code)
 	assert(ok == nil)
 	assert(err == 'Operation not permitted')
 end)
 
-test('control.list', function()
+util.test('control.list', function()
 	local s = assert(nflua.control())
 
 	local function statename(i)
@@ -309,10 +244,10 @@ test('control.list', function()
 
 	local n = 10
 	for i = 1, n do
-		run(s, 'create', statename(i))
+		util.run(s, 'create', statename(i))
 	end
 
-	local l = run(s, 'list')
+	local l = util.run(s, 'list')
 	assert(#l == n)
 	table.sort(l, function(a, b) return a.name < b.name end)
 	for i = 1, n do
@@ -320,13 +255,13 @@ test('control.list', function()
 	end
 
 	for i = 1, n do
-		run(s, 'destroy', statename(i))
+		util.run(s, 'destroy', statename(i))
 	end
 
-	assert(#run(s, 'list') == 0)
+	assert(#util.run(s, 'list') == 0)
 end)
 
-test('control.receive', function()
+util.test('control.receive', function()
 	local s = assert(nflua.control())
 
 	local ok, err = s:receive()
@@ -334,10 +269,16 @@ test('control.receive', function()
 	assert(err == 'Operation not permitted')
 end)
 
-test('data.send', function()
+local function datareceive(s)
+	local buff = data.new(nflua.datamaxsize)
+	local recv, state = assert(s:receive(buff, 0))
+	return buff:segment(0, recv), state
+end
+
+util.test('data.send', function()
 	local c = assert(nflua.control())
-	run(c, 'create', 'st')
-	run(c, 'execute', 'st', [[
+	util.run(c, 'create', 'st')
+	util.run(c, 'execute', 'st', [[
 		local nf = require'nf'
 		function __receive_callback(pid, data)
 			nf.netlink(pid, nil, data)
@@ -346,13 +287,13 @@ test('data.send', function()
 
 	local s = assert(nflua.data())
 
-	local token = gentoken()
+	local token = util.gentoken()
 	assert(s:send('st', data.new(token)) == true)
 	local buff, state = datareceive(s)
 	assert(tostring(buff) == token)
 	assert(state == 'st')
 
-	token = gentoken(nflua.datamaxsize + 1)
+	token = util.gentoken(nflua.datamaxsize + 1)
 	local ok, err = s:send('st', data.new(token))
 	assert(ok == nil)
 	assert(err == 'Operation not permitted')
@@ -362,20 +303,20 @@ test('data.send', function()
 	assert(err == argerror(3, 'expected ldata object'))
 end)
 
-test('data.receive', function()
+util.test('data.receive', function()
 	local c = assert(nflua.control())
 	local s = assert(nflua.data())
-	run(c, 'create', 'st', 256 * 1024)
+	util.run(c, 'create', 'st', 256 * 1024)
 
 	local ok, err = pcall(s.receive, s, 0, 0)
 	assert(ok == false)
 	assert(err == argerror(2, 'expected ldata object'))
 
-	c:execute('st', string.format([[
+	local code = string.format([[
 		local nf = require'nf'
 		nf.netlink(%d, nil, string.rep('x', 65000))
-	]], s:getpid()))
-	kernelfail(c, 'could not execute / load data')
+	]], s:getpid())
+	util.failrun(c, 'could not execute / load data', 'execute', 'st', code)
 end)
 
 print'done'

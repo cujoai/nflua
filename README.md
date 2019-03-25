@@ -35,3 +35,9 @@ sudo insmod ./deps/luadata/luadata.ko
 sudo insmod ./deps/luajson/luajson.ko
 sudo insmod ./src/nflua.ko
 ```
+
+Running tests:
+
+```
+sudo LD_LIBRARY_PATH=./lib:./deps/luadata LUA_CPATH="./lua/?.so;;" lua tests/all.lua
+```
