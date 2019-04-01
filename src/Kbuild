@@ -20,4 +20,5 @@
 ccflags-y += -D_KERNEL
 
 obj-$(CONFIG_NFLUA) += nflua.o
-nflua-objs += nf_util.o luautil.o luanf.o luatimer.o states.o netlink.o xt_lua.o
+nflua-objs += kpi_compat.o nf_util.o luautil.o luanf.o luatimer.o states.o \
+		netlink.o xt_lua.o

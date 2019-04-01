@@ -26,7 +26,7 @@ static bool ip_gso_exceeds_dst_mtu(const struct sk_buff *skb)
 	if (skb->local_df || !skb_is_gso(skb))
 		return false;
 
-	mtu = ip_dst_mtu_maybe_forward(skb_dst(skb), true);
+	mtu = dst_mtu(skb_dst(skb));
 
 	/* if seglen > mtu, do software segmentation for IP fragmentation on
 	 * output.  DF bit cannot be set since ip_forward would have sent

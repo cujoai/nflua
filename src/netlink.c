@@ -29,6 +29,7 @@
 #include "luautil.h"
 #include "netlink.h"
 #include "nf_util.h"
+#include "kpi_compat.h"
 
 #define STATES_PER_FRAG(header)  ((unsigned short)((NFLUA_PAYLOAD_MAXSIZE \
         - NLMSG_SPACE(sizeof(header))) \
@@ -89,7 +90,7 @@ static struct nflua_client *client_lookup(struct xt_lua_net *xt_lua, u32 pid)
 		return NULL;
 
 	head = &xt_lua->client_table[pid_hash(pid)];
-	hlist_for_each_entry_rcu(client, head, node) {
+	kpi_hlist_for_each_entry_rcu(client, head, node) {
 		if (client->pid == pid)
 			return client;
 	}
@@ -158,7 +159,7 @@ static int nflua_get_skb(struct sk_buff **skb, u32 seq, u16 type, int flags,
 }
 
 #define nlmsg_send(sock, skb, pid, group) \
-       ((group == 0) ? nlmsg_unicast(sock, skb, pid) : \
+       ((group == 0) ? kpi_nlmsg_unicast(sock, skb, pid) : \
                nlmsg_multicast(sock, skb, pid, group, GFP_ATOMIC))
 
 int nflua_nl_send_data(struct nflua_state *s, u32 pid, u32 group,
@@ -218,7 +219,7 @@ static int nflua_create_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
 	pr_debug("new state created: %.*s\n",
 		(int)strnlen(cmd->name, NFLUA_NAME_MAXSIZE), cmd->name);
 
-	return nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
+	return kpi_nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
 }
 
 static int nflua_destroy_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
@@ -244,7 +245,7 @@ static int nflua_destroy_op(struct xt_lua_net *xt_lua, struct sk_buff *skb)
 		return ret;
 	}
 
-	return nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
+	return kpi_nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
 }
 
 static void init_list_hdr(struct list_cursor *lc)
@@ -339,7 +340,7 @@ static int list_iter(struct nflua_state *state, unsigned short *data)
 	skb = lc->oskb;
 	lc->oskb = NULL;
 
-	if ((ret = nlmsg_unicast(lc->sock, skb, lc->nlh->nlmsg_pid)) != 0)
+	if ((ret = kpi_nlmsg_unicast(lc->sock, skb, lc->nlh->nlmsg_pid)) != 0)
 		pr_err("couldn't send reply packet. Error: %d\n", ret);
 
 	return ret;
@@ -531,7 +532,7 @@ static int nflua_handle_frag(struct xt_lua_net *xt_lua,
 		goto out;
 	}
 
-	ret = nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
+	ret = kpi_nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid);
 
 out:
 	clear_request(client);
@@ -651,7 +652,7 @@ static void nflua_handle_error(struct xt_lua_net *xt_lua, struct sk_buff *skb)
 		return;
 	}
 
-	if (nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid) < 0)
+	if (kpi_nlmsg_unicast(xt_lua->sock, oskb, nlh->nlmsg_pid) < 0)
 		pr_err("could not send error replying packet\n");
 }
 
@@ -670,12 +671,7 @@ static void nflua_netlink_input(struct sk_buff *skb)
 		return;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
-	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
-#else
-	if (!capable(CAP_NET_ADMIN))
-#endif
-	{
+	if (!kpi_ns_capable(net->user_ns, CAP_NET_ADMIN)) {
 		pr_err("operation not permitted\n");
 		return;
 	}
@@ -749,7 +745,8 @@ int nflua_rcv_nl_event(struct notifier_block *this,
 	if (event != NETLINK_URELEASE || n->protocol != NETLINK_NFLUA)
 		return NOTIFY_DONE;
 
-	pr_debug("NETLINK_URELEASE event from id %u\n", n->portid);
+	pr_debug("NETLINK_URELEASE event from id %u\n",
+		kpi_netlink_notify_portid(n));
 
 	if ((w = kmalloc(sizeof(*w), GFP_ATOMIC)) == NULL) {
 		pr_err("could not alloc notify work\n");
@@ -757,7 +754,7 @@ int nflua_rcv_nl_event(struct notifier_block *this,
 	}
 
 	INIT_WORK((struct work_struct *) w, nflua_urelease_event_work);
-	w->portid = n->portid;
+	w->portid = kpi_netlink_notify_portid(n);
 	w->xt_lua = xt_lua_pernet(n->net);
 	schedule_work((struct work_struct *) w);
 
@@ -766,33 +763,19 @@ int nflua_rcv_nl_event(struct notifier_block *this,
 
 int nflua_netlink_init(struct xt_lua_net *xt_lua, struct net *net)
 {
-	unsigned int groups = 0;
-	void (*input)(struct sk_buff *skb) = nflua_netlink_input;
+        kpi_netlink_kernel_cfg cfg = {
+		.groups = 0,
+		.input = nflua_netlink_input
+	};
 	int i;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	struct netlink_kernel_cfg cfg = {
-		.groups = groups,
-		.input = input,
-	};
-#endif
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
-	xt_lua->sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	xt_lua->sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE,
-			&cfg);
-#else
-	xt_lua->sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
-			NULL, THIS_MODULE);
-#endif
-
+	xt_lua->sock = kpi_netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
 	if (xt_lua->sock == NULL)
 	    return -1;
 
 	spin_lock_init(&xt_lua->client_lock);
 
-	hash_random = get_random_u32();
+	hash_random = kpi_get_random_u32();
 	for (i = 0; i < XT_LUA_HASH_BUCKETS; i++)
 		INIT_HLIST_HEAD(&xt_lua->client_table[i]);
 

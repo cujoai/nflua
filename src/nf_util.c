@@ -16,6 +16,7 @@
 #include <linux/slab.h>
 #include <linux/ip.h>
 #include <linux/version.h>
+#include <linux/ratelimit.h>
 #include <net/ip.h>
 #include <net/ip6_checksum.h>
 #include <net/tcp.h>
@@ -23,81 +24,19 @@
 #include <net/dst.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
-#ifdef MODULE
-#include <linux/kallsyms.h>
-
-static void (*__ip_forward_options)(struct sk_buff *);
-
-bool nf_util_init(void)
-{
-	return (__ip_forward_options = (void(*)(struct sk_buff*))
-		kallsyms_lookup_name("ip_forward_options")) != NULL;
-}
-
-#else
-
-#define __ip_forward_options(skb) (ip_forward_options(skb))
-
-bool nf_util_init(void)
-{
-	return true;
-}
-#endif
 
 #include "nf_util.h"
-
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-#define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
-#define __ip_route_me_harder(skb) \
-	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC))
-
-#if IS_ENABLED(CONFIG_IPV6)
-#define __ip6_route_me_harder(skb) \
-	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb))
-#endif /* CONFIG_IPV6 */
-#else
-#define __dst_output(skb) (dst_output(skb))
-#define __ip_route_me_harder(skb) (ip_route_me_harder(skb, RTN_UNSPEC))
-
-#if IS_ENABLED(CONFIG_IPV6)
-#define __ip6_route_me_harder(skb) (ip6_route_me_harder(skb))
-#endif /* CONFIG_IPV6 */
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,7,0)
-#define __IP_INC_STATS IP_INC_STATS_BH
-#define __IP_ADD_STATS IP_ADD_STATS_BH
-#if IS_ENABLED(CONFIG_IPV6)
-#define __IP6_INC_STATS IP6_INC_STATS_BH
-#define __IP6_ADD_STATS IP6_ADD_STATS_BH
-#endif
-#endif
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,5,0)
-#define net_dbg_ratelimited(fmt, ...)			\
-	do {						\
-		if (net_ratelimit())			\
-			pr_debug(fmt, ##__VA_ARGS__);	\
-	} while (0)
-#endif
+#include "kpi_compat.h"
 
 #if IS_ENABLED(CONFIG_IPV6)
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3,9,0)
-static inline void ip6_flow_hdr(struct ipv6hdr *hdr, unsigned int tclass,
-				__be32 flowlabel)
-{
-	*(__be32 *)hdr = ntohl(0x60000000 | (tclass << 20)) | flowlabel;
-}
-#endif
-
 static int tcp_ipv6_reply(struct sk_buff *oldskb,
 			  struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
 {
-	struct net *net = xt_net(par);
+	struct net *net = kpi_xt_net(par);
 	struct sk_buff *nskb;
 	struct tcphdr otcph, *tcph;
 	unsigned int otcplen, hh_len;
@@ -120,8 +59,8 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	}
 
 	proto = oip6h->nexthdr;
-	tcphoff = ipv6_skip_exthdr(oldskb, ((u8*)(oip6h + 1) - oldskb->data),
-				   &proto, &frag_off);
+	tcphoff = ipv6_skip_exthdr(oldskb,
+		((u8*)(oip6h + 1) - oldskb->data), &proto, &frag_off);
 
 	if ((tcphoff < 0) || (tcphoff > oldskb->len)) {
 		pr_warn("Cannot get TCP header.\n");
@@ -147,11 +86,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	hook = xt_hooknum(par);
-#else
-	hook = par->hooknum;
-#endif
+	hook = kpi_xt_hooknum(par);
 
 	/* Check checksum. */
 	if (nf_ip6_checksum(oldskb, hook, tcphoff, IPPROTO_TCP)) {
@@ -194,7 +129,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	skb_put(nskb, sizeof(struct ipv6hdr));
 	skb_reset_network_header(nskb);
 	ip6h = ipv6_hdr(nskb);
-	ip6_flow_hdr(ip6h, tclass, 0);
+	kpi_ip6_flow_hdr(ip6h, tclass, 0);
 	ip6h->hop_limit = ip6_dst_hoplimit(dst);
 	ip6h->nexthdr = IPPROTO_TCP;
 	ip6h->saddr = oip6h->daddr;
@@ -231,11 +166,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip6_local_out(xt_net(par), nskb->sk, nskb);
-#else
- 	ip6_local_out(nskb);
-#endif
+	kpi_ip6_local_out(kpi_xt_net(par), nskb->sk, nskb);
 
 	return 0;
 }
@@ -261,7 +192,7 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 
 	proto = ip6h->nexthdr;
 	tcphoff = ipv6_skip_exthdr(skb, (u8*)(ip6h + 1) - skb->data,
-				   &proto, &frag_off);
+		&proto, &frag_off);
 
 	if (tcphoff < 0 || tcphoff > skb->len) {
 		pr_warn("Cannot get TCP header.\n");
@@ -332,7 +263,7 @@ static int tcp_ipv6_payload_length(const struct sk_buff *skb)
 
 	proto = iph->nexthdr;
 	tcphoff = ipv6_skip_exthdr(skb, (u8*)(iph + 1) - skb->data,
-				   &proto, &frag_off);
+		&proto, &frag_off);
 
 	if (proto != IPPROTO_TCP) {
 		pr_warn_ratelimited("TCP length called on non tcp packet.\n");
@@ -358,10 +289,12 @@ static int ipv6_forward_finish(struct sk_buff *skb)
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	struct dst_entry *dst = skb_dst(skb);
 
-	__IP6_INC_STATS(net, ip6_dst_idev(dst), IPSTATS_MIB_OUTFORWDATAGRAMS);
-	__IP6_ADD_STATS(net, ip6_dst_idev(dst), IPSTATS_MIB_OUTOCTETS, skb->len);
+	KPI_IP6_INC_STATS(net, ip6_dst_idev(dst),
+		IPSTATS_MIB_OUTFORWDATAGRAMS);
+	KPI_IP6_ADD_STATS(net, ip6_dst_idev(dst),
+		IPSTATS_MIB_OUTOCTETS, skb->len);
 
-	return __dst_output(skb);
+	return kpi_dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb);
 }
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
@@ -402,11 +335,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
-	hook = xt_hooknum(par);
-#else
-	hook = par->hooknum;
-#endif
+	hook = kpi_xt_hooknum(par);
 
 	/* Check checksum */
 	if (nf_ip_checksum(oldskb, hook, ip_hdrlen(oldskb), IPPROTO_TCP)) {
@@ -462,11 +391,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	if (ip_route_me_harder(xt_net(par), nskb, RTN_UNSPEC))
-#else
-	if (ip_route_me_harder(nskb, RTN_UNSPEC))
-#endif
+	if (kpi_ip_route_me_harder(kpi_xt_net(par), nskb, RTN_UNSPEC))
 		goto free_nskb;
 
 	niph->ttl	= ip4_dst_hoplimit(skb_dst(nskb));
@@ -477,11 +402,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
-	ip_local_out(xt_net(par), nskb->sk, nskb);
-#else
- 	ip_local_out(nskb);
-#endif
+	kpi_ip_local_out(kpi_xt_net(par), nskb->sk, nskb);
 
 	return 0;
 
@@ -493,10 +414,8 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	      unsigned char *msg, size_t len)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	if (oldskb->protocol == htons(ETH_P_IPV6))
+	if (IS_ENABLED(CONFIG_IPV6) && oldskb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_reply(oldskb, par, msg, len);
-#endif
 	return tcp_ipv4_reply(oldskb, par, msg, len);
 }
 
@@ -592,106 +511,46 @@ static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 struct sk_buff *tcp_payload(struct sk_buff *skb,
                             unsigned char *payload, size_t len)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	if (skb->protocol == htons(ETH_P_IPV6))
+	if (IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_payload(skb, payload, len);
-#endif
 	return tcp_ipv4_payload(skb, payload, len);
 }
-
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)) && \
-	 (LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0)))
-static bool ipv4_gso_exceeds_dst_mtu(const struct sk_buff *skb)
-{
-	unsigned int mtu;
-
-	if (skb->local_df || !skb_is_gso(skb))
-		return false;
-
-	mtu = dst_mtu(skb_dst(skb));
-
-	/* if seglen > mtu, do software segmentation for IP fragmentation on
-	 * output.  DF bit cannot be set since ip_forward would have sent
-	 * icmp error.
-	 */
-	return skb_gso_network_seglen(skb) > mtu;
-}
-
-/* called if GSO skb needs to be fragmented on forward */
-static int ipv4_forward_finish_gso(struct sk_buff *skb)
-{
-	netdev_features_t features;
-	struct sk_buff *segs;
-	int ret = 0;
-
-	features = netif_skb_dev_features(skb, skb_dst(skb)->dev);
-	segs = skb_gso_segment(skb, features & ~NETIF_F_GSO_MASK);
-	if (IS_ERR(segs)) {
-		kfree_skb(skb);
-		return -ENOMEM;
-	}
-
-	consume_skb(skb);
-
-	do {
-		struct sk_buff *nskb = segs->next;
-		int err;
-
-		segs->next = NULL;
-		err = __dst_output(segs);
-
-		if (err && ret == 0)
-			ret = err;
-		segs = nskb;
-	} while (segs);
-
-	return ret;
-}
-#endif
 
 static int ipv4_forward_finish(struct sk_buff *skb)
 {
 	struct net *net = dev_net(skb_dst(skb)->dev);
 	struct ip_options *opt = &IPCB(skb)->opt;
+	int ret;
 
-	__IP_INC_STATS(net, IPSTATS_MIB_OUTFORWDATAGRAMS);
-	__IP_ADD_STATS(net, IPSTATS_MIB_OUTOCTETS, skb->len);
+	KPI_IP_INC_STATS(net, IPSTATS_MIB_OUTFORWDATAGRAMS);
+	KPI_IP_ADD_STATS(net, IPSTATS_MIB_OUTOCTETS, skb->len);
 
 	if (unlikely(opt->optlen))
-		__ip_forward_options(skb);
+		kpi_ip_forward_options(skb);
 
-#if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3,14,0)) && \
-	 (LINUX_VERSION_CODE < KERNEL_VERSION(3,15,0)))
-	if (ipv4_gso_exceeds_dst_mtu(skb))
-		return ipv4_forward_finish_gso(skb);
-#endif
+	if ((ret = kpi_forward_finish_gso(skb)) != 0)
+		return ret;
 
-	return __dst_output(skb);
+	return kpi_dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb);
 }
 
 int tcp_send(struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	if (skb->protocol == htons(ETH_P_IPV6))
+	if (IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6))
 		return ipv6_forward_finish(skb);
-#endif
 	return ipv4_forward_finish(skb);
 }
 
 int tcp_payload_length(const struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	if (skb->protocol == htons(ETH_P_IPV6))
+	if (IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_payload_length(skb);
-#endif
 	return tcp_ipv4_payload_length(skb);
 }
 
 int route_me_harder(struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
-	if (skb->protocol == htons(ETH_P_IPV6))
-		return __ip6_route_me_harder(skb);
-#endif /* CONFIG_IPV6 */
-	return __ip_route_me_harder(skb);
+	if (IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6))
+		return kpi_ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb);
+	return kpi_ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC);
 }

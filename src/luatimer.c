@@ -17,6 +17,7 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#include <linux/export.h>
 #include <linux/timer.h>
 
 #include <lua.h>
@@ -25,6 +26,7 @@
 
 #include "states.h"
 #include "luautil.h"
+#include "kpi_compat.h"
 
 #define NFLUA_TIMER "ltimer"
 
@@ -33,8 +35,9 @@ struct nftimer_ctx {
 	struct nflua_state *state;
 };
 
-static void __timeout_cb(struct nftimer_ctx *ctx)
+static void timeout_cb(kpi_timer_list_t l)
 {
+	struct nftimer_ctx *ctx = kpi_from_timer(ctx, l, timer);
 	int base;
 
 	spin_lock(&ctx->state->lock);
@@ -60,19 +63,6 @@ unlock:
 	spin_unlock(&ctx->state->lock);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
-static void timeout_cb(struct timer_list *t)
-{
-	struct nftimer_ctx *ctx = from_timer(ctx, t, timer);
-	__timeout_cb(ctx);
-}
-#else
-static void timeout_cb(unsigned long data)
-{
-	__timeout_cb((struct nftimer_ctx *)data);
-}
-#endif
-
 static int ltimer_create(lua_State *L)
 {
 	struct nftimer_ctx *ctx;
@@ -84,11 +74,7 @@ static int ltimer_create(lua_State *L)
 	ctx->state = luaU_getenv(L, struct nflua_state);
 	luaL_setmetatable(L, NFLUA_TIMER);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
-	timer_setup(&ctx->timer, timeout_cb, 0);
-#else
-	setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
-#endif
+	kpi_timer_setup(&ctx->timer, timeout_cb, ctx);
 	if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
 		return luaL_error(L, "error setting timer");
 

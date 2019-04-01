@@ -20,6 +20,7 @@
 #include <linux/slab.h>
 #include <linux/spinlock.h>
 #include <linux/idr.h>
+#include <linux/ratelimit.h>
 
 #include <lualib.h>
 
@@ -27,6 +28,7 @@
 #include "xt_lua.h"
 #include "states.h"
 #include "netlink.h"
+#include "kpi_compat.h"
 
 #ifndef NFLUA_SETPAUSE
 #define NFLUA_SETPAUSE	100
@@ -41,8 +43,8 @@ extern int luaopen_timer(lua_State* L);
 
 static inline int name_hash(void *salt, const char *name)
 {
-	return full_name_hash(salt, name, strnlen(name, NFLUA_NAME_MAXSIZE)) &
-		(XT_LUA_HASH_BUCKETS - 1);
+	int len = strnlen(name, NFLUA_NAME_MAXSIZE);
+	return kpi_full_name_hash(salt, name, len) & (XT_LUA_HASH_BUCKETS - 1);
 }
 
 struct nflua_state *nflua_state_lookup(struct xt_lua_net *xt_lua,
@@ -55,7 +57,7 @@ struct nflua_state *nflua_state_lookup(struct xt_lua_net *xt_lua,
 		return NULL;
 
 	head = &xt_lua->state_table[name_hash(xt_lua, name)];
-	hlist_for_each_entry_rcu(state, head, node) {
+	kpi_hlist_for_each_entry_rcu(state, head, node) {
 		if (!strncmp(state->name, name, NFLUA_NAME_MAXSIZE))
 			return state;
 	}
@@ -184,7 +186,7 @@ int nflua_state_destroy(struct xt_lua_net *xt_lua, const char *name)
 {
 	struct nflua_state *s = nflua_state_lookup(xt_lua, name);
 
-	if (s == NULL || refcount_read(&s->users) > 1)
+	if (s == NULL || kpi_refcount_read(&s->users) > 1)
 		return -1;
 
 	spin_lock_bh(&xt_lua->state_lock);
@@ -207,7 +209,7 @@ int nflua_state_list(struct xt_lua_net *xt_lua, nflua_state_cb cb,
 
 	for (i = 0; i < XT_LUA_HASH_BUCKETS; i++) {
 		head = &xt_lua->state_table[i];
-		hlist_for_each_entry_rcu(s, head, node) {
+		kpi_hlist_for_each_entry_rcu(s, head, node) {
 			if ((ret = cb(s, total)) != 0)
 				goto out;
 		}
@@ -228,7 +230,7 @@ void nflua_state_destroy_all(struct xt_lua_net *xt_lua)
 	spin_lock_bh(&xt_lua->state_lock);
 	for (i = 0; i < XT_LUA_HASH_BUCKETS; i++) {
 		head = &xt_lua->state_table[i];
-		hlist_for_each_entry_safe(s, tmp, head, node) {
+		kpi_hlist_for_each_entry_safe(s, tmp, head, node) {
 			state_destroy(xt_lua, s);
 		}
 	}

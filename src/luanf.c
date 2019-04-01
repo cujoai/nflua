@@ -18,6 +18,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <net/netfilter/nf_conntrack.h>
+#include <linux/export.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -32,6 +33,7 @@
 #include "netlink.h"
 #include "states.h"
 #include "nf_util.h"
+#include "kpi_compat.h"
 
 static int nflua_reply(lua_State *L)
 {
@@ -197,11 +199,7 @@ static int nflua_skb_tostring(lua_State *L)
 			"cloned:%d dataref:%d frags:%d }",
 			skb->len,
 			skb->data_len,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0)
-			refcount_read(&skb->users),
-#else
-			atomic_read(&skb->users),
-#endif
+			kpi_skb_users(skb),
 			skb->cloned,
 			atomic_read(&skb_shinfo(skb)->dataref),
 			skb_shinfo(skb)->nr_frags);

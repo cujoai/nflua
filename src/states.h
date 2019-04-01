@@ -19,7 +19,7 @@
 #ifndef NFLUA_STATES_H
 #define NFLUA_STATES_H
 
-#include <linux/refcount.h>
+#include "kpi_compat.h"
 
 #include <lua.h>
 
@@ -32,7 +32,7 @@ struct nflua_state {
 	lua_State *L;
 	struct sock *sock;
 	spinlock_t lock;
-	refcount_t users;
+	kpi_refcount_t users;
 	u32 dseqnum;
 	size_t maxalloc;
 	size_t curralloc;
@@ -56,13 +56,13 @@ void nflua_state_destroy_all(struct xt_lua_net *xt_lua);
 
 static inline struct nflua_state *nflua_state_get(struct nflua_state *s)
 {
-	refcount_inc(&s->users);
+	kpi_refcount_inc(&s->users);
 	return s;
 }
 
 static inline void nflua_state_put(struct nflua_state *s)
 {
-	refcount_dec(&s->users);
+	kpi_refcount_dec(&s->users);
 }
 
 void nflua_states_init(struct xt_lua_net *xt_lua);

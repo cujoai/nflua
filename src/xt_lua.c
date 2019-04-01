@@ -31,6 +31,7 @@
 #include "nf_util.h"
 #include "netlink.h"
 #include "states.h"
+#include "kpi_compat.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Pedro Caldas Tammela <pctammela@getcujo.com>");
@@ -43,13 +44,6 @@ luaU_id nflua_ctx;
 luaU_id nflua_sock;
 
 static int xt_lua_net_id __read_mostly;
-
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
-static inline u32 skb_mac_header_len(const struct sk_buff *skb)
-{
-	return skb->network_header - skb->mac_header;
-}
-#endif
 
 struct xt_lua_net *xt_lua_pernet(struct net *net)
 {
@@ -91,7 +85,8 @@ static int nflua_docall(lua_State *L)
 	if (skb_linearize(skb) != 0)
 		return luaL_error(L, "skb linearization failed.\n");
 
-	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
+	ctx->frame = ldata_newref(L, skb_mac_header(skb),
+		kpi_skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
 
 	error = lua_pcall(L, 2, 1, 0);
@@ -240,7 +235,9 @@ static struct xt_match nflua_mt_reg __read_mostly = {
 	.checkentry = nflua_mt_checkentry,
 	.destroy    = nflua_mt_destroy,
 	.matchsize  = sizeof(struct xt_lua_mtinfo),
+#ifdef KPI_XT_MATCH_USERSIZE
 	.usersize   = offsetof(struct xt_lua_mtinfo, state),
+#endif
 	.me         = THIS_MODULE
 };
 
@@ -252,7 +249,9 @@ static struct xt_target nflua_tg_reg __read_mostly = {
 	.checkentry = nflua_tg_checkentry,
 	.destroy    = nflua_tg_destroy,
 	.targetsize = sizeof(struct xt_lua_mtinfo),
+#ifdef KPI_XT_MATCH_USERSIZE
 	.usersize   = offsetof(struct xt_lua_mtinfo, state),
+#endif
 	.me         = THIS_MODULE
 };
 
@@ -295,8 +294,8 @@ static int __init xt_lua_init(void)
 
 	pr_debug("initializing module\n");
 
-	if (!nf_util_init())
-		return -EFAULT;
+	if ((ret = kpi_init()))
+		return ret;
 
 	if ((ret = register_pernet_subsys(&xt_lua_net_ops)))
 		return ret;
