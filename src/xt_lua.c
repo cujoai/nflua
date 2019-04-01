@@ -41,6 +41,10 @@
 #include <linux/jiffies.h>
 #include <linux/timer.h>
 
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_zones.h>
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -73,6 +77,7 @@ MODULE_DESCRIPTION("Netfilter Lua module");
 
 static int xt_lua_net_id __read_mostly;
 struct xt_lua_net {
+	struct net *net;
 	lua_State *L;
 	spinlock_t lock;
 };
@@ -525,6 +530,66 @@ int nflua_hotdrop(lua_State *L)
 	return 0;
 }
 
+static int nflua_findconnid(lua_State *L)
+{
+	struct xt_lua_net *xt_lua = luaU_getenv(L, struct xt_lua_net);
+	struct nf_conn *conn;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *hash;
+	size_t slen, dlen;
+	lua_Integer family = luaL_checkinteger(L, 1);
+	const char *protoname[] = {"udp", "tcp", NULL};
+	const int protonums[] = {IPPROTO_UDP, IPPROTO_TCP, 0};
+	int protonum = protonums[luaL_checkoption(L, 2, NULL, protoname)];
+	const char *saddr = luaL_checklstring(L, 3, &slen);
+	__be16 sport = htons(luaL_checknumber(L, 4));
+	const char *daddr = luaL_checklstring(L, 5, &dlen);
+	__be16 dport = htons(luaL_checknumber(L, 6));
+	int derr, serr;
+	const char *end;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	switch (family) {
+	case 4:
+		tuple.src.l3num = NFPROTO_IPV4;
+		serr = in4_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in4_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	case 6:
+		tuple.src.l3num = NFPROTO_IPV6;
+		serr = in6_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in6_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	default:
+		return luaL_error(L, "unknown family");
+	}
+
+	if (!serr || !derr)
+		return luaL_error(L, "failed to convert address to binary");
+
+	tuple.dst.protonum = protonum;
+	tuple.src.u.all = sport;
+	tuple.dst.u.all = dport;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,3,0)
+	hash = nf_conntrack_find_get(xt_lua->net, NF_CT_DEFAULT_ZONE, &tuple);
+#else
+	hash = nf_conntrack_find_get(xt_lua->net, &nf_ct_zone_dflt, &tuple);
+#endif
+
+	if (hash == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "connid entry not found");
+		return 2;
+	}
+
+	conn = nf_ct_tuplehash_to_ctrack(hash);
+	lua_pushlightuserdata(L, conn);
+
+	return 1;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
@@ -532,6 +597,7 @@ static const luaL_Reg nflua_lib[] = {
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
 	{"hotdrop", nflua_hotdrop},
+	{"findconnid", nflua_findconnid},
 	{NULL, NULL}
 };
 
@@ -641,6 +707,7 @@ static int __net_init xt_lua_net_init(struct net *net)
 	spin_lock_init(&xt_lua->lock);
 
 	spin_lock_bh(&xt_lua->lock);
+	xt_lua->net = net;
 	xt_lua->L = L = luaL_newstate();
 	if (L == NULL) {
 		spin_unlock_bh(&xt_lua->lock);
