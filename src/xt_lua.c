@@ -651,8 +651,10 @@ static int __net_init xt_lua_net_init(struct net *net)
 	luaU_setenv(L, xt_lua, struct xt_lua_net);
 	luaL_openlibs(L);
 
+	luaL_requiref(L, "nf", luaopen_nf, 1);
+	luaL_requiref(L, "timer", luaopen_timer, 1);
 	luaL_requiref(L, "data", luaopen_data, 1);
-	lua_pop(L, 1);
+	lua_pop(L, 3);
 
 	/* fixes an issue where the Lua's GC enters a vicious cycle.
 	 * more info here: https://marc.info/?l=lua-l&m=155024035605499&w=2
