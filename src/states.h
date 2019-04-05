@@ -30,7 +30,7 @@ struct xt_lua_net;
 struct nflua_state {
 	struct hlist_node node;
 	lua_State *L;
-	struct sock *sock;
+	struct xt_lua_net *xt_lua;
 	spinlock_t lock;
 	kpi_refcount_t users;
 	u32 dseqnum;
@@ -54,16 +54,8 @@ int nflua_state_list(struct xt_lua_net *xt_lua, nflua_state_cb cb,
 
 void nflua_state_destroy_all(struct xt_lua_net *xt_lua);
 
-static inline struct nflua_state *nflua_state_get(struct nflua_state *s)
-{
-	kpi_refcount_inc(&s->users);
-	return s;
-}
-
-static inline void nflua_state_put(struct nflua_state *s)
-{
-	kpi_refcount_dec(&s->users);
-}
+bool nflua_state_get(struct nflua_state *s);
+void nflua_state_put(struct nflua_state *s);
 
 void nflua_states_init(struct xt_lua_net *xt_lua);
 void nflua_states_exit(struct xt_lua_net *xt_lua);

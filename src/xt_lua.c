@@ -64,9 +64,12 @@ static int nflua_mt_checkentry(const struct xt_mtchk_param *par)
 	struct nflua_state *s;
 
 	if ((s = nflua_state_lookup(xt_lua_pernet(par->net), info->name)) == NULL)
-		return -1;
+		return -EPERM;
 
-	info->state = nflua_state_get(s);
+	if (!nflua_state_get(s))
+		return -ESTALE;
+
+	info->state = s;
 	return 0;
 }
 
@@ -217,7 +220,10 @@ static int nflua_tg_checkentry(const struct xt_tgchk_param *par)
 	if (s == NULL)
 		return -ENOENT;
 
-	info->state = nflua_state_get(s);
+	if (!nflua_state_get(s))
+		return -ESTALE;
+
+	info->state = s;
 	return 0;
 }
 

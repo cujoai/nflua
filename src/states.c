@@ -47,6 +47,20 @@ static inline int name_hash(void *salt, const char *name)
 	return kpi_full_name_hash(salt, name, len) & (XT_LUA_HASH_BUCKETS - 1);
 }
 
+static bool refcount_dec_and_lock_bh(refcount_t *r, spinlock_t *lock)
+{
+	if (refcount_dec_not_one(r))
+		return false;
+
+	spin_lock_bh(lock);
+	if (!refcount_dec_and_test(r)) {
+		spin_unlock_bh(lock);
+		return false;
+	}
+
+	return true;
+}
+
 struct nflua_state *nflua_state_lookup(struct xt_lua_net *xt_lua,
 		const char *name)
 {
@@ -76,10 +90,7 @@ static void state_destroy(struct xt_lua_net *xt_lua, struct nflua_state *s)
 	}
 	spin_unlock_bh(&s->lock);
 
-	/* FIXME: There's a possible race condition here if the nflua module is
-	 * unloaded while a timer is being executed and waiting to acquire the lock.
-	 */
-	kfree(s);
+	nflua_state_put(s);
 }
 
 static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
@@ -162,7 +173,7 @@ struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
 	s->dseqnum   = 0;
 	s->maxalloc  = maxalloc;
 	s->curralloc = 0;
-	s->sock      = xt_lua->sock;
+	s->xt_lua    = xt_lua;
 	memcpy(&(s->name), name, namelen);
 
 	if (state_init(s)) {
@@ -174,7 +185,7 @@ struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
 	spin_lock_bh(&xt_lua->state_lock);
 	head = &xt_lua->state_table[name_hash(xt_lua, name)];
 	hlist_add_head_rcu(&s->node, head);
-	nflua_state_get(s);
+	refcount_inc(&s->users);
 	atomic_inc(&xt_lua->state_count);
 	spin_unlock_bh(&xt_lua->state_lock);
 
@@ -237,11 +248,31 @@ void nflua_state_destroy_all(struct xt_lua_net *xt_lua)
 	spin_unlock_bh(&xt_lua->state_lock);
 }
 
+bool nflua_state_get(struct nflua_state *s)
+{
+	return refcount_inc_not_zero(&s->users);
+}
+
+void nflua_state_put(struct nflua_state *s)
+{
+	struct xt_lua_net *xt_lua;
+
+	if (WARN_ON(s == NULL))
+		return;
+
+	xt_lua = s->xt_lua;
+	if (refcount_dec_and_lock_bh(&s->users, &xt_lua->rfcnt_lock)) {
+		kfree(s);
+		spin_unlock_bh(&xt_lua->rfcnt_lock);
+	}
+}
+
 void nflua_states_init(struct xt_lua_net *xt_lua)
 {
 	int i;
 	atomic_set(&xt_lua->state_count, 0);
 	spin_lock_init(&xt_lua->state_lock);
+	spin_lock_init(&xt_lua->rfcnt_lock);
 	for (i = 0; i < XT_LUA_HASH_BUCKETS; i++)
 		INIT_HLIST_HEAD(&xt_lua->state_table[i]);
 }

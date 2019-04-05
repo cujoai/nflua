@@ -29,6 +29,7 @@ struct xt_lua_net {
 	struct sock *sock;
 	spinlock_t client_lock;
 	spinlock_t state_lock;
+	spinlock_t rfcnt_lock;
 	atomic_t state_count;
 	struct hlist_head client_table[XT_LUA_HASH_BUCKETS];
 	struct hlist_head state_table[XT_LUA_HASH_BUCKETS];

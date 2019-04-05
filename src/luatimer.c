@@ -18,6 +18,7 @@
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/export.h>
+#include <linux/module.h>
 #include <linux/timer.h>
 
 #include <lua.h>
@@ -34,6 +35,28 @@ struct nftimer_ctx {
 	struct timer_list timer;
 	struct nflua_state *state;
 };
+
+static bool state_get(struct nflua_state *s)
+{
+	if (!try_module_get(THIS_MODULE))
+		return false;
+
+	if (!nflua_state_get(s)) {
+		module_put(THIS_MODULE);
+		return false;
+	}
+
+	return true;
+}
+
+static void state_put(struct nflua_state *s)
+{
+	if (WARN_ON(s == NULL))
+		return;
+
+	nflua_state_put(s);
+	module_put(THIS_MODULE);
+}
 
 static void timeout_cb(kpi_timer_list_t l)
 {
@@ -61,6 +84,7 @@ cleanup:
 	lua_settop(ctx->state->L, base);
 unlock:
 	spin_unlock(&ctx->state->lock);
+	state_put(ctx->state);
 }
 
 static int ltimer_create(lua_State *L)
@@ -74,9 +98,14 @@ static int ltimer_create(lua_State *L)
 	ctx->state = luaU_getenv(L, struct nflua_state);
 	luaL_setmetatable(L, NFLUA_TIMER);
 
+	if (!state_get(ctx->state))
+		return luaL_error(L, "error incrementing state reference count");
+
 	kpi_timer_setup(&ctx->timer, timeout_cb, ctx);
-	if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
+	if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs))) {
+		state_put(ctx->state);
 		return luaL_error(L, "error setting timer");
+	}
 
 	lua_pushvalue(L, 2);
 	lua_setuservalue(L, -2);
@@ -97,6 +126,7 @@ static int ltimer_destroy(lua_State *L)
 		return 0;
 
 	del_timer(&ctx->timer);
+	state_put(ctx->state);
 
 	luaU_unregisterudata(L, ctx);
 	lua_settop(L, base);

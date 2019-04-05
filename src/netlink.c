@@ -188,7 +188,7 @@ int nflua_nl_send_data(struct nflua_state *s, u32 pid, u32 group,
 	memcpy(data->name, s->name, NFLUA_NAME_MAXSIZE);
 	memcpy(((char *)data) + hdrsize, payload, len);
 
-	ret = nlmsg_send(s->sock, skb, pid, group);
+	ret = nlmsg_send(s->xt_lua->sock, skb, pid, group);
 	return ret < 0 ? ret : 0;
 }
 
@@ -402,6 +402,11 @@ static int nflua_exec(struct xt_lua_net *xt_lua, u32 pid,
 		return -ENOENT;
 	}
 
+	if (!nflua_state_get(s)) {
+		pr_err("couldn't increment state reference\n");
+		return -ESTALE;
+	}
+
 	spin_lock_bh(&s->lock);
 	if (s->L == NULL) {
 		pr_err("invalid lua state");
@@ -436,6 +441,7 @@ static int nflua_exec(struct xt_lua_net *xt_lua, u32 pid,
 	}
 out:
 	spin_unlock_bh(&s->lock);
+	nflua_state_put(s);
 	return error;
 }
 
