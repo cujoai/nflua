@@ -34,6 +34,10 @@
 
 #define LUA_DATALIBNAME "data"
 extern int luaopen_data(lua_State* L);
+#define LUA_NFLIBNAME "nf"
+extern int luaopen_nf(lua_State* L);
+#define LUA_TIMERLIBNAME "timer"
+extern int luaopen_timer(lua_State* L);
 
 static inline int name_hash(void *salt, const char *name)
 {
@@ -107,7 +111,9 @@ static int state_init(struct nflua_state *s)
 	luaL_openlibs(s->L);
 
 	luaL_requiref(s->L, LUA_DATALIBNAME, luaopen_data, 1);
-	lua_pop(s->L, 1);
+	luaL_requiref(s->L, LUA_NFLIBNAME, luaopen_nf, 1);
+	luaL_requiref(s->L, LUA_TIMERLIBNAME, luaopen_timer, 1);
+	lua_pop(s->L, 3);
 
 	/* fixes an issue where the Lua's GC enters a vicious cycle.
 	 * more info here: https://marc.info/?l=lua-l&m=155024035605499&w=2
