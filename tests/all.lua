@@ -17,3 +17,5 @@
 --
 
 dofile'tests/lib.lua'
+dofile'tests/timer.lua'
+print'done'

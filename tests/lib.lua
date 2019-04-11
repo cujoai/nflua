@@ -310,5 +310,3 @@ util.test('data.receive', function()
 	]], s:getpid())
 	util.failrun(c, 'could not execute / load data', 'execute', 'st', code)
 end)
-
-print'done'
