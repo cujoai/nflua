@@ -269,12 +269,6 @@ util.test('control.receive', function()
 	assert(err == 'Operation not permitted')
 end)
 
-local function datareceive(s)
-	local buff = data.new(nflua.datamaxsize)
-	local recv, state = assert(s:receive(buff, 0))
-	return buff:segment(0, recv), state
-end
-
 util.test('data.send', function()
 	local c = assert(nflua.control())
 	util.run(c, 'create', 'st')
@@ -289,7 +283,7 @@ util.test('data.send', function()
 
 	local token = util.gentoken()
 	assert(s:send('st', data.new(token)) == true)
-	local buff, state = datareceive(s)
+	local buff, state = util.datareceive(s)
 	assert(tostring(buff) == token)
 	assert(state == 'st')
 

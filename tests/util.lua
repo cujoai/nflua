@@ -37,6 +37,12 @@ local function receiveall(s)
 	return table.unpack(ret)
 end
 
+function util.datareceive(s)
+	local buff = data.new(nflua.datamaxsize)
+	local recv, state = assert(s:receive(buff, 0))
+	return buff:segment(0, recv), state
+end
+
 function util.run(s, cmd, ...)
 	assert(s[cmd](s, ...) == true)
 	return assert(receiveall(s))
