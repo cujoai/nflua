@@ -273,7 +273,6 @@ util.test('data.send', function()
 	local c = assert(nflua.control())
 	util.run(c, 'create', 'st')
 	util.run(c, 'execute', 'st', [[
-		local nf = require'nf'
 		function __receive_callback(pid, data)
 			nf.netlink(pid, nil, data)
 		end
@@ -307,7 +306,6 @@ util.test('data.receive', function()
 	assert(err == argerror(2, 'expected ldata object'))
 
 	local code = string.format([[
-		local nf = require'nf'
 		nf.netlink(%d, nil, string.rep('x', 65000))
 	]], s:getpid())
 	util.failrun(c, 'could not execute / load data', 'execute', 'st', code)
