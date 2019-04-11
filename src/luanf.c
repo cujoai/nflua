@@ -17,8 +17,11 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
-#include <net/netfilter/nf_conntrack.h>
+#include <linux/inet.h>
 #include <linux/export.h>
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_zones.h>
 
 #include <lua.h>
 #include <lauxlib.h>
@@ -251,6 +254,62 @@ int nflua_hotdrop(lua_State *L)
 	return 0;
 }
 
+static int nflua_findconnid(lua_State *L)
+{
+	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
+	struct nf_conn *conn;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *hash;
+	size_t slen, dlen;
+	lua_Integer family = luaL_checkinteger(L, 1);
+	const char *protoname[] = {"udp", "tcp", NULL};
+	const int protonums[] = {IPPROTO_UDP, IPPROTO_TCP, 0};
+	int protonum = protonums[luaL_checkoption(L, 2, NULL, protoname)];
+	const char *saddr = luaL_checklstring(L, 3, &slen);
+	__be16 sport = htons(luaL_checknumber(L, 4));
+	const char *daddr = luaL_checklstring(L, 5, &dlen);
+	__be16 dport = htons(luaL_checknumber(L, 6));
+	int derr, serr;
+	const char *end;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	switch (family) {
+	case 4:
+		tuple.src.l3num = NFPROTO_IPV4;
+		serr = in4_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in4_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	case 6:
+		tuple.src.l3num = NFPROTO_IPV6;
+		serr = in6_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in6_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	default:
+		return luaL_error(L, "unknown family");
+	}
+
+	if (!serr || !derr)
+		return luaL_error(L, "failed to convert address to binary");
+
+	tuple.dst.protonum = protonum;
+	tuple.src.u.all = sport;
+	tuple.dst.u.all = dport;
+
+	hash = nf_conntrack_find_get(sock_net(s->sock), KPI_CT_DEFAULT_ZONE, &tuple);
+
+	if (hash == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "connid entry not found");
+		return 2;
+	}
+
+	conn = nf_ct_tuplehash_to_ctrack(hash);
+	lua_pushlightuserdata(L, conn);
+
+	return 1;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
@@ -258,6 +317,7 @@ static const luaL_Reg nflua_lib[] = {
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
 	{"hotdrop", nflua_hotdrop},
+	{"findconnid", nflua_findconnid},
 	{NULL, NULL}
 };
 

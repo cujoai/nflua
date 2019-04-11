@@ -27,8 +27,15 @@
 #include <linux/types.h>
 #include <linux/version.h>
 #include <linux/module.h>
+#include <net/netfilter/nf_conntrack_zones.h>
 
 #include "nfluaconf.h"
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,3,0)
+#define KPI_CT_DEFAULT_ZONE	NF_CT_DEFAULT_ZONE
+#else
+#define KPI_CT_DEFAULT_ZONE	&nf_ct_zone_dflt
+#endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
 #define kpi_netlink_kernel_create		netlink_kernel_create
