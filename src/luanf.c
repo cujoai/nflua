@@ -211,17 +211,6 @@ static int nflua_skb_tostring(lua_State *L)
 	return 1;
 }
 
-static int nflua_time(lua_State *L)
-{
-	struct timespec ts;
-
-	getnstimeofday(&ts);
-	lua_pushinteger(L, (lua_Integer)ts.tv_sec);
-	lua_pushinteger(L, (lua_Integer)(ts.tv_nsec / NSEC_PER_MSEC));
-
-	return 2;
-}
-
 int nflua_connid(lua_State *L)
 {
 	struct nflua_ctx *ctx;
@@ -313,7 +302,6 @@ static int nflua_findconnid(lua_State *L)
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
-	{"time", nflua_time},
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
 	{"hotdrop", nflua_hotdrop},
