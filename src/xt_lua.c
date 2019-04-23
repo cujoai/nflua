@@ -240,6 +240,7 @@ static int nflua_netlink(lua_State *L)
 	int pid = luaL_checkinteger(L, 2);
 	int group = luaL_optinteger(L, 3, 0);
 	int flags = luaL_optinteger(L, 4, 0);
+	int err;
 	struct sk_buff *skb;
 	struct nlmsghdr *nlh;
 	struct sock *sock;
@@ -259,8 +260,17 @@ static int nflua_netlink(lua_State *L)
 
 	memcpy(nlmsg_data(nlh), payload, size);
 
-	if (nlmsg_send(sock, skb, pid, group) < 0)
-		return luaL_error(L, "failed to send message");
+	if ((err = nlmsg_send(sock, skb, pid, group)) < 0) {
+		switch (-err) {
+		case EAGAIN:
+			return luaL_error(L, "socket buffer full: Rabid busy?");
+		case ECONNREFUSED:
+			return luaL_error(L,
+				"connection refused: Rabid shut down?");
+		default:
+			return luaL_error(L, "error code %d", err);
+		}
+	}
 
 	lua_pushinteger(L, (lua_Integer) size);
 	return 1;
