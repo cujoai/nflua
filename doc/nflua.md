@@ -30,7 +30,7 @@ Index
 - [`control:getfd`](#controlgetfd)
 - [`control:getpid`](#controlgetpid)
 - [`control:getstate`](#controlgetstate)
-- [`control:create`](#controlcreatename-intructions-memory--flags)
+- [`control:create`](#controlcreatename-intructions--memory-flags)
 - [`control:destroy`](#controldestroystate)
 - [`control:execute`](#controlexecutestate-chunk)
 - [`control:list`](#controllist)
@@ -44,8 +44,8 @@ Index
 Contents
 --------
 
-Unless otherwise stated, all functions return nil on failure, plus an error message and a system-dependent error code.
-In case of success, the functions return a value different from nil; true if not state otherwise.
+Unless otherwise stated, all functions return `nil` on failure, plus an error message and a system-dependent error code.
+In case of success, the functions return a value different from `nil`; `true` if not stated otherwise.
 If the contract of the functions are not respected, the function may trigger an error.
 
 ### `control = nflua.control([port])`
@@ -99,14 +99,16 @@ Returns the port ID number of control socket `control`.
 
 Returns a string that defines the current state of control socket `control`, as described below:
 
-`"ready"`: socket can be used to send commands.
-`"waiting"`: socket shall be used to start receiving a reply.
-`"receiving"`: socket shall be used to receive the remains of a reply.
-`"failed"`: socket shall be closed due to faulty communication using the underlying protocol.
+* `"ready"`: socket can be used to send commands.
+* `"waiting"`: socket shall be used to start receiving a reply.
+* `"receiving"`: socket shall be used to receive the remains of a reply.
+* `"failed"`: socket shall be closed due to faulty communication using the underlying protocol.
 
-### `control:create(name, intructions, memory [, flags])`
+### `control:create(name, instructions [, memory , flags])`
 
 Sends command using socket `control` to NFLua kernel module to create a new Lua state.
+After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
+
 String `name` is the name of the module and it must be unique.
 Number `instructions` is the maximum number of Lua VM instructions that a Lua state can execute at once; after the interpeter executes this number of instructions, it interrupts the call.
 Number `memory` is the maximum number of bytes that the state can allocate in the kernel.
@@ -117,14 +119,17 @@ String `flags` shall contain the following characters that will define additiona
 ### `control:destroy(state)`
 
 Sends command using socket `control` to NFLua kernel module to remove a Lua state with name `state`.
+After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
 ### `control:execute(state, chunk)`
 
 Sends command using socket `control` to NFLua kernel module to execute the Lua code in string `chunk` in state with name `state`.
+After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
 ### `control:list()`
 
 Sends command using socket `control` to NFLua kernel module to reply with information about all current Lua states.
+After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
 ### `result = control:receive()`
 
