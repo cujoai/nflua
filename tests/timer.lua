@@ -22,8 +22,8 @@ local socket = require'socket'
 
 local util = require 'tests.util'
 
-local basetimeout = 100
-local errlimit = 50
+local basetimeout = 100 -- ms
+local errlimit = 50 -- ms
 
 util.test('timer create single', function()
 	local c = assert(nflua.control())
@@ -31,18 +31,17 @@ util.test('timer create single', function()
 
 	local code = string.format([[
 		local basetimeout, pid = %d, %d
-		local oldsec, oldms = nf.time()
+		local _, old = os.time()
 		timer.create(basetimeout, function()
-			local nowsec, nowms = nf.time()
-			local elapsed = nowms - oldms + (nowsec - oldsec) * 1000
-			nf.netlink(pid, nil, tostring(elapsed))
+			local _, now = os.time()
+			nf.netlink(pid, nil, tostring(now - old))
 		end)
 	]], basetimeout, d:getpid())
 
 	util.run(c, 'create', 'st', 256 * 1024)
 	util.run(c, 'execute', 'st', code)
 
-	local elapsed = tonumber(tostring(util.datareceive(d)))
+	local elapsed = tonumber(tostring(util.datareceive(d))) / 1000000
 	assert(elapsed >= basetimeout)
 	assert(elapsed < basetimeout + errlimit)
 end)
