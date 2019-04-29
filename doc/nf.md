@@ -24,7 +24,6 @@ Index
 - [`nf.hotdrop`](#nfhotdropdrop)
 - [`nf.netlink`](#size--nfnetlinkport-groups-payload)
 - [`nf.reply`](#nfreplytype-message)
-- [`nf.time`](#seconds-millis--nftime)
 - [`packet:close`](#packetclose)
 - [`packet:send`](#packetsendpayload)
 
@@ -115,10 +114,6 @@ The datagram contains the string `payload` as payload.
 
 Sends a TCP reply with the string `message` as payload.
 `type` must be string that starts with character `t`.
-
-### `seconds, millis = nf.time()`
-
-Returns the number of seconds since UNIX epoch time (01/01/1970), followed by the number of milliseconds since this second.
 
 ### `packet:close()`
 
