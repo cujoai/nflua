@@ -18,3 +18,4 @@
 
 dofile'tests/lib.lua'
 dofile'tests/timer.lua'
+dofile'tests/match.lua'

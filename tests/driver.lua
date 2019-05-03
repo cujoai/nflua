@@ -75,4 +75,13 @@ function driver.failrun(s, msg, cmd, ...)
 	driver.matchdmesg(3, msg)
 end
 
+function driver.setup(st, code)
+	local c = assert(nflua.control())
+	driver.run(c, 'create', st)
+	if code then
+		driver.run(c, 'execute', st, code)
+	end
+	return c
+end
+
 return driver
