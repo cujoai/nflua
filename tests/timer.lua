@@ -18,7 +18,6 @@
 
 local nflua = require'nflua'
 local data = require'data'
-local socket = require'socket'
 
 local util = require 'tests.util'
 
