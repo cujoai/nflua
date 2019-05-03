@@ -22,6 +22,31 @@ local util = {}
 
 math.randomseed(os.time())
 
+local chains = {
+	'INPUT',
+}
+
+function util.testchain(c)
+	return 'NFLUA_TESTS_' .. c
+end
+
+for _, c in ipairs(chains) do
+	assert(os.execute('iptables -N ' .. util.testchain(c)))
+	assert(os.execute('iptables -I ' .. c .. ' -j ' .. util.testchain(c)))
+end
+
+util.cleanup = setmetatable({}, {
+	__gc = function ()
+		for _, c in ipairs(chains) do
+			os.execute('iptables -D ' .. c .. ' -j ' .. util.testchain(c))
+			os.execute('iptables -F ' .. util.testchain(c))
+			os.execute('iptables -X ' .. util.testchain(c))
+		end
+		assert(os.execute'sudo rmmod nflua')
+		assert(os.execute'sudo insmod ./src/nflua.ko')
+	end
+})
+
 function util.gentoken(n)
 	n = n or 16
 	local s = {}
@@ -49,19 +74,12 @@ function util.run(s, cmd, ...)
 end
 
 function util.test(name, f, ...)
-	-- When nflua requires a module eg: "require('nf')" it creates
-	-- a kernel module dependency, so we need to explicit destroy the states.
-	local s = assert(nflua.control())
-	for _, state in ipairs(util.run(s, 'list')) do
-		util.run(s, 'destroy', state.name)
+	for _, c in ipairs(chains) do
+		os.execute('iptables -F ' .. util.testchain(c))
 	end
-	s:close()
-
 	collectgarbage()
-
 	assert(os.execute'sudo rmmod nflua')
 	assert(os.execute'sudo insmod ./src/nflua.ko')
-
 	print('testing', name)
 	f(...)
 end

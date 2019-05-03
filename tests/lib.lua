@@ -197,16 +197,16 @@ end)
 util.test('control.destroy and iptables', function()
 	local s = assert(nflua.control())
 
+	local rule = string.format([[
+		%s -p 6 -m tcp --dport 63765 -m lua --state st --function t1 -j DROP
+	]], util.testchain'INPUT')
+
 	util.run(s, 'create', 'st')
-	assert(os.execute([[
-		iptables -A INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
-	]]))
+	assert(os.execute('iptables -A ' .. rule))
 	util.failrun(s, 'could not destroy lua state', 'destroy', 'st')
 	assert(#util.run(s, 'list') == 1)
 
-	assert(os.execute([[
-		iptables -D INPUT -p 6 -m tcp --dport 63765 -m lua --state st --func t1 -j DROP
-	]]))
+	assert(os.execute('iptables -D ' .. rule))
 	util.run(s, 'destroy', 'st')
 	assert(#util.run(s, 'list') == 0)
 end)
