@@ -25,6 +25,10 @@
 
 #define NETLINK_NFLUA      	31     /* NFLua netlink protocol family */
 
+#ifndef XT_LUA_MEM_LIMIT
+#define XT_LUA_MEM_LIMIT        (32 * 1024 * 1024)
+#endif
+
 enum {
 	XT_NFLUA_TCP_PAYLOAD = 0x01
 };
