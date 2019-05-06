@@ -78,6 +78,7 @@ MODULE_DESCRIPTION("Netfilter Lua module");
 static int xt_lua_net_id __read_mostly;
 struct xt_lua_net {
 	struct net *net;
+	size_t alloc;
 	lua_State *L;
 	spinlock_t lock;
 };
@@ -673,6 +674,27 @@ out:
 	spin_unlock_bh(&xt_lua->lock);
 }
 
+static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+	struct xt_lua_net *xt_lua = ud;
+	void *nptr = NULL;
+
+	/* osize doesn't represent the object old size if ptr is NULL */
+	osize = ptr != NULL ? osize : 0;
+
+	if (nsize == 0) {
+		xt_lua->alloc -= osize;
+		kfree(ptr);
+	} else if (xt_lua->alloc - osize + nsize > XT_LUA_MEM_LIMIT) {
+		pr_warn_ratelimited("memory limit %d exceeded\n",
+		    XT_LUA_MEM_LIMIT);
+	} else if ((nptr = krealloc(ptr, nsize, GFP_ATOMIC)) != NULL) {
+		xt_lua->alloc += nsize - osize;
+	}
+
+	return nptr;
+}
+
 static int __net_init xt_lua_net_init(struct net *net)
 {
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
@@ -705,7 +727,8 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	spin_lock_bh(&xt_lua->lock);
 	xt_lua->net = net;
-	xt_lua->L = L = luaL_newstate();
+	xt_lua->alloc = 0;
+	xt_lua->L = L = lua_newstate(lua_alloc, xt_lua);
 	if (L == NULL) {
 		spin_unlock_bh(&xt_lua->lock);
 		netlink_kernel_release(sock);
