@@ -285,7 +285,7 @@ static int nflua_findconnid(lua_State *L)
 	tuple.src.u.all = sport;
 	tuple.dst.u.all = dport;
 
-	hash = nf_conntrack_find_get(sock_net(s->sock), KPI_CT_DEFAULT_ZONE, &tuple);
+	hash = nf_conntrack_find_get(sock_net(s->xt_lua->sock), KPI_CT_DEFAULT_ZONE, &tuple);
 
 	if (hash == NULL) {
 		lua_pushnil(L);
