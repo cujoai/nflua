@@ -18,6 +18,8 @@ _51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA._
 Index
 -----
 
+- [`match`](#match-callback-function)
+- [`target`](#match-callback-function)
 - [`nf.connid`](#id--nfconnid)
 - [`nf.findconnid`](##id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport)
 - [`nf.getpacket`](#packet--nfgetpacket)
@@ -28,6 +30,32 @@ Index
 
 Contents
 --------
+
+### Match callback function
+
+```
+function match(frame, payload)
+	return true
+end
+```
+
+The match callback receives two Luadata objects representing the frame (L1 header), and the payload (starting from L2 header) of the intercepted packet.
+This callback should return either a boolean to indicate whether it's a match, or `"hotdrop"` to indicate hotdropping the packet; other return values are considered an error.
+In case of errors, it is considered that the match function returned false.
+For information on how to register a match callback see the `nflua/iptables/README.md` documentation.
+
+### Target callback function
+
+```
+function target(packet)
+	return 'drop'
+end
+```
+
+The target callback receives two Luadata objects representing the frame (L1 header), and the payload (starting from L2 header) of the intercepted packet.
+This callback should return one of the following strings: `'drop'`, `'accept'`, `'stolen'`, `'queue'`, `'repeat'` and `'stop'`.
+Returning any other value will have the same effect as `XT_CONTINUE`.
+For information on how to register a target callback see the `nflua/iptables/README.md` documentation.
 
 ### `id = nf.connid()`
 
