@@ -32,17 +32,16 @@
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
-static int tcp_ipv6_reply(struct sk_buff *oldskb,
-			  struct xt_action_param *par,
+static int tcp_ipv6_reply(struct sk_buff *oldskb, int hooknum,
 			  unsigned char *msg, size_t len)
 {
-	struct net *net = kpi_xt_net(par);
+	struct net *net = dev_net(skb_dst(oldskb)->dev);
 	struct sk_buff *nskb;
 	struct tcphdr otcph, *tcph;
 	unsigned int otcplen, hh_len;
 	unsigned char *data;
 	size_t tcplen;
-	int tcphoff, hook;
+	int tcphoff;
 	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
 	struct ipv6hdr *ip6h;
 #define DEFAULT_TOS_VALUE	0x0U
@@ -86,10 +85,8 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
-	hook = kpi_xt_hooknum(par);
-
 	/* Check checksum. */
-	if (nf_ip6_checksum(oldskb, hook, tcphoff, IPPROTO_TCP)) {
+	if (nf_ip6_checksum(oldskb, hooknum, tcphoff, IPPROTO_TCP)) {
 		pr_warn("TCP checksum is invalid\n");
 		return -1;
 	}
@@ -166,7 +163,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-	kpi_ip6_local_out(kpi_xt_net(par), nskb->sk, nskb);
+	kpi_ip6_local_out(net, nskb->sk, nskb);
 
 	return 0;
 }
@@ -298,15 +295,14 @@ static int ipv6_forward_finish(struct sk_buff *skb)
 }
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
-static int tcp_ipv4_reply(struct sk_buff *oldskb,
-		          struct xt_action_param *par,
+static int tcp_ipv4_reply(struct sk_buff *oldskb, int hooknum,
 			  unsigned char *msg, size_t len)
 {
+	struct net *net = dev_net(skb_dst(oldskb)->dev);
 	struct sk_buff *nskb;
 	const struct iphdr *oiph;
 	struct iphdr *niph;
 	const struct tcphdr *oth;
-	int hook;
 	struct tcphdr _otcph, *tcph;
 	unsigned char *data;
 	size_t tcplen;
@@ -335,10 +331,8 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
-	hook = kpi_xt_hooknum(par);
-
 	/* Check checksum */
-	if (nf_ip_checksum(oldskb, hook, ip_hdrlen(oldskb), IPPROTO_TCP)) {
+	if (nf_ip_checksum(oldskb, hooknum, ip_hdrlen(oldskb), IPPROTO_TCP)) {
 		pr_warn("TCP checksum is invalid\n");
 		return -1;
 	}
@@ -391,7 +385,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
-	if (kpi_ip_route_me_harder(kpi_xt_net(par), nskb, RTN_UNSPEC))
+	if (kpi_ip_route_me_harder(net, nskb, RTN_UNSPEC))
 		goto free_nskb;
 
 	niph->ttl	= ip4_dst_hoplimit(skb_dst(nskb));
@@ -402,7 +396,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 
 	nf_ct_attach(nskb, oldskb);
 
-	kpi_ip_local_out(kpi_xt_net(par), nskb->sk, nskb);
+	kpi_ip_local_out(net, nskb->sk, nskb);
 
 	return 0;
 
@@ -411,12 +405,12 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 	return -1;
 }
 
-int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
-	      unsigned char *msg, size_t len)
+int tcp_reply(struct sk_buff *oldskb, int hooknum, unsigned char *msg,
+		size_t len)
 {
 	if (IS_ENABLED(CONFIG_IPV6) && oldskb->protocol == htons(ETH_P_IPV6))
-		return tcp_ipv6_reply(oldskb, par, msg, len);
-	return tcp_ipv4_reply(oldskb, par, msg, len);
+		return tcp_ipv6_reply(oldskb, hooknum, msg, len);
+	return tcp_ipv4_reply(oldskb, hooknum, msg, len);
 }
 
 static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,

@@ -54,7 +54,7 @@ static int nflua_reply(lua_State *L)
 
 	switch (type[0]) {
 	case 't':
-		if (tcp_reply(ctx->skb, ctx->par, msg, len) != 0)
+		if (tcp_reply(ctx->skb, ctx->hooknum, msg, len) != 0)
 			goto error;
 		break;
 	default:

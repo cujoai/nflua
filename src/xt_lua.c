@@ -77,13 +77,13 @@ static int nflua_docall(lua_State *L)
 {
 	struct nflua_ctx *ctx = lua_touserdata(L, 1);
 	struct sk_buff *skb = ctx->skb;
-	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
 	int error;
 
 	luaU_setregval(L, nflua_ctx, ctx);
 
-	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
-		return luaL_error(L, "couldn't find function: %s\n", info->func);
+	if (lua_getglobal(L, ctx->mtinfo->func) != LUA_TFUNCTION)
+		return luaL_error(L, "couldn't find function: %s\n",
+		                  ctx->mtinfo->func);
 
 	if (skb_linearize(skb) != 0)
 		return luaL_error(L, "skb linearization failed.\n");
@@ -135,8 +135,8 @@ static union call_result nflua_call(struct sk_buff *skb,
     struct xt_action_param *par, int mode)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
-	struct nflua_ctx ctx = {.skb = skb, .par = par,
-		.frame = LUA_NOREF, .packet = LUA_NOREF,
+	struct nflua_ctx ctx = {.skb = skb, .hooknum = kpi_xt_hooknum(par),
+		.mtinfo = info, .frame = LUA_NOREF, .packet = LUA_NOREF,
 		.mode = mode, .lskb = NULL};
 	lua_State *L = info->state->L;
 	union call_result r;

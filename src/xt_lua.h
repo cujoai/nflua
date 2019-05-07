@@ -47,7 +47,8 @@ enum {
 
 struct nflua_ctx {
 	struct sk_buff *skb;
-	struct xt_action_param *par;
+	int hooknum;
+	const struct xt_lua_mtinfo *mtinfo;
 	int frame;
 	int packet;
 	int mode;
