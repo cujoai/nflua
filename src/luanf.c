@@ -129,29 +129,22 @@ static int nflua_skb_send(lua_State *L)
 
 		/* Original packet is not needed anymore */
 		kfree_skb(*lskb);
-		*lskb = NULL;
 	} else {
 		if (unlikely(skb_shared(*lskb)))
 			return luaL_error(L, "cannot send a shared skb");
 		nskb = *lskb;
 	}
+	*lskb = NULL;
 
 	if (route_me_harder(nskb)) {
-		pr_err("unable to route packet");
-		goto error;
-	}
-
-	if (tcp_send(nskb) != 0) {
-		pr_err("unable to send packet");
-		goto error;
-	}
-
-	*lskb = NULL;
-	return 0;
-error:
-	if (*lskb == NULL && nskb != NULL)
 		kfree_skb(nskb);
-	return luaL_error(L, "send packet error");
+		luaL_error(L, "unable to route packet");
+	}
+
+	if (tcp_send(nskb))
+		luaL_error(L, "unable to send packet");
+
+	return 0;
 }
 
 static int nflua_getpacket(lua_State *L)
