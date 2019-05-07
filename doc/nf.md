@@ -21,7 +21,6 @@ Index
 - [`nf.connid`](#id--nfconnid)
 - [`nf.findconnid`](##id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport)
 - [`nf.getpacket`](#packet--nfgetpacket)
-- [`nf.hotdrop`](#nfhotdropdrop)
 - [`nf.netlink`](#size--nfnetlinkport-groups-payload)
 - [`nf.reply`](#nfreplytype-message)
 - [`packet:close`](#packetclose)
@@ -99,10 +98,6 @@ assert(id4 == nil)
 
 Returns a copy of the current packet being filtered by Netlink framework.
 This function can only be called from a NFLua evaluation callback function.
-
-### `nf.hotdrop(drop)`
-
-Sets whether the packet will be hot-dropped or not, based on the boolean `drop`.
 
 ### `size = nf.netlink(port, groups, payload)`
 

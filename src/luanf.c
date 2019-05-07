@@ -220,22 +220,6 @@ int nflua_connid(lua_State *L)
 	return 1;
 }
 
-int nflua_hotdrop(lua_State *L)
-{
-	struct nflua_ctx *ctx;
-
-	ctx = luaU_getregval(L, nflua_ctx);
-	if (ctx == NULL)
-		return luaL_error(L, "couldn't get packet context");
-
-	if (ctx->mode != NFLUA_MATCH)
-		return luaL_error(L, "not on match context");
-
-	luaL_checktype(L, -1, LUA_TBOOLEAN);
-	ctx->par->hotdrop = lua_toboolean(L, -1);
-	return 0;
-}
-
 static int nflua_findconnid(lua_State *L)
 {
 	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
@@ -297,7 +281,6 @@ static const luaL_Reg nflua_lib[] = {
 	{"netlink", nflua_netlink},
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
-	{"hotdrop", nflua_hotdrop},
 	{"findconnid", nflua_findconnid},
 	{NULL, NULL}
 };
