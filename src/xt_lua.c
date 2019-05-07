@@ -168,7 +168,13 @@ static union call_result nflua_call(struct sk_buff *skb,
 
 	switch (mode) {
 	case NFLUA_MATCH:
-		r.mt = lua_toboolean(L, -1);
+		if (lua_isboolean(L, -1))
+			r.mt = lua_toboolean(L, -1);
+		else if (lua_isstring(L, -1) &&
+		         strcmp(lua_tostring(L, -1), "hotdrop") == 0)
+			par->hotdrop = true;
+		else
+			pr_warn("invalid match return");
 		break;
 	case NFLUA_TARGET:
 		if (lua_isstring(L, -1))
