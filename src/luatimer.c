@@ -71,7 +71,7 @@ static void timeout_cb(kpi_timer_list_t l)
 	base = lua_gettop(ctx->state->L);
 
 	/* check if ltimer_destroy was called for this timer */
-	if (!luaU_pushudata(ctx->state->L, ctx)) goto cleanup;
+	if (WARN_ON(!luaU_pushudata(ctx->state->L, ctx))) goto cleanup;
 
 	lua_getuservalue(ctx->state->L, -1);
 	if (lua_pcall(ctx->state->L, 0, 0, 0) != 0) {
@@ -95,9 +95,9 @@ static int ltimer_create(lua_State *L)
 	luaL_checktype(L, 2, LUA_TFUNCTION);
 
 	ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
-	ctx->state = luaU_getenv(L, struct nflua_state);
 	luaL_setmetatable(L, NFLUA_TIMER);
 
+	ctx->state = luaU_getenv(L, struct nflua_state);
 	if (!state_get(ctx->state))
 		return luaL_error(L, "error incrementing state reference count");
 
@@ -107,6 +107,7 @@ static int ltimer_create(lua_State *L)
 		return luaL_error(L, "error setting timer");
 	}
 
+	/* set callback function */
 	lua_pushvalue(L, 2);
 	lua_setuservalue(L, -2);
 
@@ -117,19 +118,16 @@ static int ltimer_create(lua_State *L)
 
 static int ltimer_destroy(lua_State *L)
 {
-	struct nftimer_ctx *ctx =
-		(struct nftimer_ctx *) luaL_checkudata(L, 1, NFLUA_TIMER);
-	int base = lua_gettop(L);
+	struct nftimer_ctx *ctx = luaL_checkudata(L, 1, NFLUA_TIMER);
 
 	/* the timer callback has already cleaned the context up */
 	if (!luaU_pushudata(L, ctx))
 		return 0;
 
+	luaU_unregisterudata(L, ctx);
 	del_timer(&ctx->timer);
 	state_put(ctx->state);
 
-	luaU_unregisterudata(L, ctx);
-	lua_settop(L, base);
 	return 0;
 }
 
