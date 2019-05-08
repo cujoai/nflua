@@ -118,25 +118,35 @@ end)
 
 util.test('timer destroy state', function()
 	local c = assert(nflua.control())
-	local d = assert(nflua.data())
 
-	local function sendtoken(state, timeout, token)
-		util.run(c, 'execute', state, string.format([[
-			local timeout, pid, token = %d, %d, %q
-			timer.create(timeout, function()
-				nf.netlink(pid, nil, token)
-			end)
-		]], timeout, d:getpid(), token))
-	end
+	util.run(c, 'create', 'st', 256 * 1024)
+	util.run(c, 'execute', 'st', string.format([[
+		local timeout = %d
+		timer.create(timeout, function() end)
+	]], basetimeout))
 
-	util.run(c, 'create', 'st1', 256 * 1024)
-	util.run(c, 'create', 'st2', 256 * 1024)
+	util.failrun(c, 'could not destroy lua state', 'destroy', 'st')
 
-	sendtoken('st1', basetimeout, 'fail')
-	util.run(c, 'destroy', 'st1')
+	os.execute('sleep ' .. basetimeout / 1000)
+	util.run(c, 'destroy', 'st')
+end)
 
-	local token = util.gentoken(32)
-	sendtoken('st2', basetimeout * 2, token)
+util.test('timer close module', function()
+	local c = assert(nflua.control())
 
-	assert(tostring(util.datareceive(d)) == token)
+	util.run(c, 'create', 'st', 256 * 1024)
+	util.run(c, 'execute', 'st', string.format([[
+		local timeout = %d
+		timer.create(timeout, function() end)
+	]], basetimeout))
+
+	c:close()
+
+	local f = io.popen('sudo rmmod nflua 2>&1')
+	local msg = assert(f:read())
+	assert(msg == 'rmmod: ERROR: Module nflua is in use')
+
+	os.execute('sleep ' .. basetimeout / 1000)
+	assert(os.execute'sudo rmmod nflua')
+	assert(os.execute'sudo insmod ./src/nflua.ko')
 end)
