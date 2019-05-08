@@ -122,7 +122,7 @@ static int ltimer_destroy(lua_State *L)
 	int base = lua_gettop(L);
 
 	/* the timer callback has already cleaned the context up */
-	if (ctx == NULL)
+	if (!luaU_pushudata(L, ctx))
 		return 0;
 
 	del_timer(&ctx->timer);
