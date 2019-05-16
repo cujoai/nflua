@@ -276,12 +276,38 @@ static int nflua_findconnid(lua_State *L)
 	return 1;
 }
 
+static int nflua_traffic(lua_State *L)
+{
+	static const char *const directions[] = {
+		[IP_CT_DIR_ORIGINAL] = "original",
+		[IP_CT_DIR_REPLY] = "reply",
+		[IP_CT_DIR_MAX] = NULL
+	};
+	struct nf_conn *ct = lua_touserdata(L, 1);
+	int dir = luaL_checkoption(L, 2, NULL, directions);
+	const struct nf_conn_counter *counters;
+
+	luaL_argcheck(L, ct != NULL, 1, "invalid connid");
+
+	if ((counters = kpi_nf_conn_acct_find(ct)) == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "counters not found");
+		return 2;
+	}
+
+	lua_pushinteger(L, atomic64_read(&counters[dir].packets));
+	lua_pushinteger(L, atomic64_read(&counters[dir].bytes));
+
+	return 2;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
 	{"findconnid", nflua_findconnid},
+	{"traffic", nflua_traffic},
 	{NULL, NULL}
 };
 

@@ -21,10 +21,11 @@ Index
 - [`match`](#match-callback-function)
 - [`target`](#match-callback-function)
 - [`nf.connid`](#id--nfconnid)
-- [`nf.findconnid`](##id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport)
+- [`nf.findconnid`](#id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport)
 - [`nf.getpacket`](#packet--nfgetpacket)
 - [`nf.netlink`](#size--nfnetlinkport-groups-payload)
 - [`nf.reply`](#nfreplytype-message)
+- [`nf.traffic`](#packets-bytes--nftrafficid-dir)
 - [`packet:close`](#packetclose)
 - [`packet:send`](#packetsendpayload)
 
@@ -137,6 +138,12 @@ The datagram contains the string `payload` as payload.
 
 Sends a TCP reply with the string `message` as payload.
 `type` must be string that starts with character `t`.
+
+### `packets, bytes = nf.traffic(id, dir)`
+
+Returns the numbers of packets and the number of bytes of the given connection defined by `id`.
+The connection `id` can be retrieved by [`nf.connid`](#id--nfconnid) and [`nf.findconnid`](#id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport).
+The parameter `dir` should be either `"original"` or `"reply"`.
 
 ### `packet:close()`
 

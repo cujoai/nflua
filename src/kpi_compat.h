@@ -28,6 +28,7 @@
 #include <linux/version.h>
 #include <linux/module.h>
 #include <net/netfilter/nf_conntrack_zones.h>
+#include <net/netfilter/nf_conntrack_acct.h>
 
 #include "nfluaconf.h"
 
@@ -89,6 +90,13 @@ typedef struct {
 	for (pos = kpi_hlist_entry_safe((head)->first, typeof(*pos), member);\
 	     pos && ({ n = pos->member.next; 1; });			\
 	     pos = kpi_hlist_entry_safe(n, typeof(*pos), member))
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#define kpi_nf_conn_acct_find(ct) \
+	(nf_conn_acct_find(ct) == NULL ? NULL : nf_conn_acct_find(ct)->counter)
+#else
+#define kpi_nf_conn_acct_find(ct)	nf_conn_acct_find(ct)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,15,0) || \
