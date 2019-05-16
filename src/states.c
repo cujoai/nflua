@@ -47,13 +47,13 @@ static inline int name_hash(void *salt, const char *name)
 	return kpi_full_name_hash(salt, name, len) & (XT_LUA_HASH_BUCKETS - 1);
 }
 
-static bool refcount_dec_and_lock_bh(refcount_t *r, spinlock_t *lock)
+static bool refcount_dec_and_lock_bh(kpi_refcount_t *r, spinlock_t *lock)
 {
-	if (refcount_dec_not_one(r))
+	if (kpi_refcount_dec_not_one(r))
 		return false;
 
 	spin_lock_bh(lock);
-	if (!refcount_dec_and_test(r)) {
+	if (!kpi_refcount_dec_and_test(r)) {
 		spin_unlock_bh(lock);
 		return false;
 	}
@@ -185,7 +185,7 @@ struct nflua_state *nflua_state_create(struct xt_lua_net *xt_lua,
 	spin_lock_bh(&xt_lua->state_lock);
 	head = &xt_lua->state_table[name_hash(xt_lua, name)];
 	hlist_add_head_rcu(&s->node, head);
-	refcount_inc(&s->users);
+	kpi_refcount_inc(&s->users);
 	atomic_inc(&xt_lua->state_count);
 	spin_unlock_bh(&xt_lua->state_lock);
 
@@ -250,7 +250,7 @@ void nflua_state_destroy_all(struct xt_lua_net *xt_lua)
 
 bool nflua_state_get(struct nflua_state *s)
 {
-	return refcount_inc_not_zero(&s->users);
+	return kpi_refcount_inc_not_zero(&s->users);
 }
 
 void nflua_state_put(struct nflua_state *s)

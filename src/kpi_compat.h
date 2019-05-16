@@ -147,16 +147,22 @@ int kpi_forward_finish_gso(struct sk_buff *skb);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)
 #include <linux/refcount.h>
 typedef refcount_t kpi_refcount_t;
-#define kpi_refcount_read	refcount_read
-#define kpi_refcount_inc	refcount_inc
-#define kpi_refcount_dec	refcount_dec
+#define kpi_refcount_read		refcount_read
+#define kpi_refcount_inc		refcount_inc
+#define kpi_refcount_dec		refcount_dec
+#define kpi_refcount_inc_not_zero	refcount_inc_not_zero
+#define kpi_refcount_dec_not_one	refcount_dec_not_one
+#define kpi_refcount_dec_and_test	refcount_dec_and_test
 #define KPI_XT_MATCH_USERSIZE	1
 #else
 #include <linux/atomic.h>
 typedef atomic_t kpi_refcount_t;
-#define kpi_refcount_read	atomic_read
-#define kpi_refcount_inc	atomic_inc
-#define kpi_refcount_dec	atomic_dec
+#define kpi_refcount_read		atomic_read
+#define kpi_refcount_inc		atomic_inc
+#define kpi_refcount_dec		atomic_dec
+#define kpi_refcount_inc_not_zero	atomic_inc_not_zero
+#define kpi_refcount_dec_not_one(r)	atomic_add_unless(r, -1, 1)
+#define kpi_refcount_dec_and_test(r)	atomic_dec_and_test
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0)
