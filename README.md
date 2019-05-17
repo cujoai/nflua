@@ -1,4 +1,4 @@
-_Copyright (C) 2018  CUJO LLC_
+_Copyright (C) 2017-2019  CUJO LLC_
 
 _This program is free software; you can redistribute it and/or modify_
 _it under the terms of the GNU General Public License as published by_
