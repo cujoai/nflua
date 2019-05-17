@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 2018 CUJO LLC.
+ * Copyright (C) 2017-2019 CUJO LLC.
  * Copyright (C) 1994-2018 Lua.org, PUC-Rio.
  *
  * Permission is hereby granted, free of charge, to any person obtaining
