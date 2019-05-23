@@ -19,7 +19,9 @@
 local nflua = require'nflua'
 local data = require'data'
 
-local util = require 'tests.util'
+local driver = require'tests.driver'
+local network = require'tests.network'
+local util = require'tests.util'
 
 local function argerror(arg, msg, fname)
 	fname = fname or '?'
@@ -59,7 +61,7 @@ local cases = {
 for socktype, cmds in pairs(cases) do
 	for _, cmd in ipairs(cmds) do
 		local t = 'socketclosed ' .. socktype .. ' ' .. cmd
-		util.test(t, socketclosed, socktype, cmd, defaults(socktype, cmd))
+		driver.test(t, socketclosed, socktype, cmd, defaults(socktype, cmd))
 	end
 end
 
@@ -78,7 +80,7 @@ local cases = {
 for socktype, cmds in pairs(cases) do
 	for _, cmd in ipairs(cmds) do
 		local t = 'doublesend ' .. socktype .. ' ' .. cmd
-		util.test(t, doublesend, socktype, cmd, defaults(socktype, cmd))
+		driver.test(t, doublesend, socktype, cmd, defaults(socktype, cmd))
 	end
 end
 
@@ -104,7 +106,7 @@ local function openclose(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	util.test('openclose ' .. socktype, openclose, socktype)
+	driver.test('openclose ' .. socktype, openclose, socktype)
 end
 
 local function getfd(socktype)
@@ -115,7 +117,7 @@ local function getfd(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	util.test('getfd ' .. socktype, getfd, socktype)
+	driver.test('getfd ' .. socktype, getfd, socktype)
 end
 
 local function getpid(socktype)
@@ -130,39 +132,39 @@ local function getpid(socktype)
 end
 
 for _, socktype in ipairs{'control', 'data'} do
-	util.test('getpid ' .. socktype, getpid, socktype)
+	driver.test('getpid ' .. socktype, getpid, socktype)
 end
 
-util.test('control.getstate', function()
+driver.test('control.getstate', function()
 	local s = assert(nflua.control())
 	assert(s:getstate() == 'ready')
 end)
 
-util.test('control.create', function()
+driver.test('control.create', function()
 	local s = assert(nflua.control())
 
-	util.run(s, 'create', 'st1')
-	local l = util.run(s, 'list')
+	driver.run(s, 'create', 'st1')
+	local l = driver.run(s, 'list')
 	assert(l[1].name == 'st1')
 	assert(l[1].maxalloc == nflua.defaultmaxallocbytes)
-	util.run(s, 'destroy', 'st1')
+	driver.run(s, 'destroy', 'st1')
 
-	util.run(s, 'create', 'st2', 128 * 1024)
-	local l = util.run(s, 'list')
+	driver.run(s, 'create', 'st2', 128 * 1024)
+	local l = driver.run(s, 'list')
 	assert(l[1].name == 'st2')
 	assert(l[1].maxalloc == 128 * 1024)
 
-	util.failrun(s, 'state already exists: st2', 'create', 'st2')
-	util.run(s, 'destroy', 'st2')
+	driver.failrun(s, 'state already exists: st2', 'create', 'st2')
+	driver.run(s, 'destroy', 'st2')
 
-	util.run(s, 'create', 'st2')
-	util.run(s, 'destroy', 'st2')
+	driver.run(s, 'create', 'st2')
+	driver.run(s, 'destroy', 'st2')
 
 	local n = nflua.maxstates
 	for i = 1, n do
-		util.run(s, 'create', 'st' .. i)
+		driver.run(s, 'create', 'st' .. i)
 	end
-	util.failrun(s, 'max states limit reached or out of memory',
+	driver.failrun(s, 'max states limit reached or out of memory',
 		'create', 'st' .. (n + 1))
 
 	local name = string.rep('a', 64)
@@ -171,62 +173,60 @@ util.test('control.create', function()
 	assert(err == argerror(2, 'name too long'))
 end)
 
-util.test('allocation size', function()
+driver.test('allocation size', function()
 	local s = assert(nflua.control())
 
 	local code = 'string.rep("a", 32 * 1024)'
 
-	util.run(s, 'create', 'st1')
-	util.failrun(s, 'could not execute / load data!',
+	driver.run(s, 'create', 'st1')
+	driver.failrun(s, 'could not execute / load data!',
 		'execute', 'st1', code)
 
-	util.run(s, 'create', 'st2', 128 * 1024)
-	util.run(s, 'execute', 'st2', code)
+	driver.run(s, 'create', 'st2', 128 * 1024)
+	driver.run(s, 'execute', 'st2', code)
 end)
 
-util.test('control.destroy', function()
+driver.test('control.destroy', function()
 	local s = assert(nflua.control())
 
-	util.run(s, 'create', 'st')
-	util.run(s, 'destroy', 'st')
-	assert(#util.run(s, 'list') == 0)
+	driver.run(s, 'create', 'st')
+	driver.run(s, 'destroy', 'st')
+	assert(#driver.run(s, 'list') == 0)
 
-	util.failrun(s, 'could not destroy lua state', 'destroy', 'st')
+	driver.failrun(s, 'could not destroy lua state', 'destroy', 'st')
 end)
 
-util.test('control.destroy and iptables', function()
+driver.test('control.destroy and iptables', function()
 	local s = assert(nflua.control())
 
-	local rule = string.format([[
-		%s -p 6 -m tcp --dport 63765 -m lua --state st --function t1 -j DROP
-	]], util.testchain'INPUT')
+	local rule = network.toserver .. ' -m lua --state st --function f'
 
-	util.run(s, 'create', 'st')
-	assert(os.execute('iptables -A ' .. rule))
-	util.failrun(s, 'could not destroy lua state', 'destroy', 'st')
-	assert(#util.run(s, 'list') == 1)
+	driver.run(s, 'create', 'st')
+	util.assertexec('iptables -A %s', rule)
+	driver.failrun(s, 'could not destroy lua state', 'destroy', 'st')
+	assert(#driver.run(s, 'list') == 1)
 
-	assert(os.execute('iptables -D ' .. rule))
-	util.run(s, 'destroy', 'st')
-	assert(#util.run(s, 'list') == 0)
+	util.assertexec('iptables -D %s', rule)
+	driver.run(s, 'destroy', 'st')
+	assert(#driver.run(s, 'list') == 0)
 end)
 
-util.test('control.execute', function()
+driver.test('control.execute', function()
 	local s = assert(nflua.control())
 
-	util.run(s, 'create', 'st')
+	driver.run(s, 'create', 'st')
 	local token = util.gentoken()
 	local code = string.format('print(%q)', token)
-	util.run(s, 'execute', 'st', code)
-	util.matchdmesg(4, token)
+	driver.run(s, 'execute', 'st', code)
+	driver.matchdmesg(4, token)
 
 	token = util.gentoken()
 	code = string.format('print(%q)', token)
-	util.run(s, 'execute', 'st', code, 'test.lua')
-	util.matchdmesg(4, token)
+	driver.run(s, 'execute', 'st', code, 'test.lua')
+	driver.matchdmesg(4, token)
 
-	util.run(s, 'destroy', 'st')
-	util.failrun(s, 'lua state not found', 'execute', 'st', 'print()')
+	driver.run(s, 'destroy', 'st')
+	driver.failrun(s, 'lua state not found', 'execute', 'st', 'print()')
 
 	local bigstring = util.gentoken(64 * 1024)
 	local code = string.format('print(%q)', bigstring)
@@ -235,7 +235,7 @@ util.test('control.execute', function()
 	assert(err == 'Operation not permitted')
 end)
 
-util.test('control.list', function()
+driver.test('control.list', function()
 	local s = assert(nflua.control())
 
 	local function statename(i)
@@ -244,10 +244,10 @@ util.test('control.list', function()
 
 	local n = 10
 	for i = 1, n do
-		util.run(s, 'create', statename(i))
+		driver.run(s, 'create', statename(i))
 	end
 
-	local l = util.run(s, 'list')
+	local l = driver.run(s, 'list')
 	assert(#l == n)
 	table.sort(l, function(a, b) return a.name < b.name end)
 	for i = 1, n do
@@ -255,13 +255,13 @@ util.test('control.list', function()
 	end
 
 	for i = 1, n do
-		util.run(s, 'destroy', statename(i))
+		driver.run(s, 'destroy', statename(i))
 	end
 
-	assert(#util.run(s, 'list') == 0)
+	assert(#driver.run(s, 'list') == 0)
 end)
 
-util.test('control.receive', function()
+driver.test('control.receive', function()
 	local s = assert(nflua.control())
 
 	local ok, err = s:receive()
@@ -269,10 +269,10 @@ util.test('control.receive', function()
 	assert(err == 'Operation not permitted')
 end)
 
-util.test('data.send', function()
+driver.test('data.send', function()
 	local c = assert(nflua.control())
-	util.run(c, 'create', 'st')
-	util.run(c, 'execute', 'st', [[
+	driver.run(c, 'create', 'st')
+	driver.run(c, 'execute', 'st', [[
 		function __receive_callback(pid, data)
 			nf.netlink(pid, nil, data)
 		end
@@ -282,7 +282,7 @@ util.test('data.send', function()
 
 	local token = util.gentoken()
 	assert(s:send('st', data.new(token)) == true)
-	local buff, state = util.datareceive(s)
+	local buff, state = driver.datareceive(s)
 	assert(tostring(buff) == token)
 	assert(state == 'st')
 
@@ -296,10 +296,10 @@ util.test('data.send', function()
 	assert(err == argerror(3, 'expected ldata object'))
 end)
 
-util.test('data.receive', function()
+driver.test('data.receive', function()
 	local c = assert(nflua.control())
 	local s = assert(nflua.data())
-	util.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'create', 'st', 256 * 1024)
 
 	local ok, err = pcall(s.receive, s, 0, 0)
 	assert(ok == false)
@@ -308,5 +308,5 @@ util.test('data.receive', function()
 	local code = string.format([[
 		nf.netlink(%d, nil, string.rep('x', 65000))
 	]], s:getpid())
-	util.failrun(c, 'could not execute / load data', 'execute', 'st', code)
+	driver.failrun(c, 'could not execute / load data', 'execute', 'st', code)
 end)

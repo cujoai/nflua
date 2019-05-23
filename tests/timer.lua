@@ -19,12 +19,13 @@
 local nflua = require'nflua'
 local data = require'data'
 
-local util = require 'tests.util'
+local driver = require'tests.driver'
+local util = require'tests.util'
 
 local basetimeout = 100 -- ms
 local errlimit = 50 -- ms
 
-util.test('timer create single', function()
+driver.test('timer create single', function()
 	local c = assert(nflua.control())
 	local d = assert(nflua.data())
 
@@ -37,15 +38,15 @@ util.test('timer create single', function()
 		end)
 	]], basetimeout, d:getpid())
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', code)
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', code)
 
-	local elapsed = tonumber(tostring(util.datareceive(d))) / 1000000
+	local elapsed = tonumber(tostring(driver.datareceive(d))) / 1000000
 	assert(elapsed >= basetimeout)
 	assert(elapsed < basetimeout + errlimit)
 end)
 
-util.test('timer create multiple', function()
+driver.test('timer create multiple', function()
 	local c = assert(nflua.control())
 	local d = assert(nflua.data())
 
@@ -64,15 +65,15 @@ util.test('timer create multiple', function()
 		end
 	]], basetimeout, d:getpid(), n, table.concat(tokens, '","'))
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', code)
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', code)
 
 	for i = n, 1, -1 do
-		assert(tostring(util.datareceive(d)) == tokens[i])
+		assert(tostring(driver.datareceive(d)) == tokens[i])
 	end
 end)
 
-util.test('timer destroy after callback', function()
+driver.test('timer destroy after callback', function()
 	local c = assert(nflua.control())
 	local d = assert(nflua.data())
 
@@ -86,13 +87,13 @@ util.test('timer destroy after callback', function()
 		end)
 	]], basetimeout, d:getpid(), token)
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', code)
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', code)
 
-	assert(tostring(util.datareceive(d)) == token)
+	assert(tostring(driver.datareceive(d)) == token)
 end)
 
-util.test('timer destroy before callback', function()
+driver.test('timer destroy before callback', function()
 	local c = assert(nflua.control())
 	local d = assert(nflua.data())
 
@@ -109,32 +110,32 @@ util.test('timer destroy before callback', function()
 		end)
 	]], basetimeout, d:getpid(), token)
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', code)
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', code)
 
-	assert(tostring(util.datareceive(d)) == token)
+	assert(tostring(driver.datareceive(d)) == token)
 end)
 
-util.test('timer destroy state', function()
+driver.test('timer destroy state', function()
 	local c = assert(nflua.control())
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', string.format([[
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', string.format([[
 		local timeout = %d
 		timer.create(timeout, function() end)
 	]], basetimeout))
 
-	util.failrun(c, 'could not destroy lua state', 'destroy', 'st')
+	driver.failrun(c, 'could not destroy lua state', 'destroy', 'st')
 
-	os.execute('sleep ' .. basetimeout / 1000)
-	util.run(c, 'destroy', 'st')
+	util.assertexec('sleep %q', basetimeout / 1000)
+	driver.run(c, 'destroy', 'st')
 end)
 
-util.test('timer close module', function()
+driver.test('timer close module', function()
 	local c = assert(nflua.control())
 
-	util.run(c, 'create', 'st', 256 * 1024)
-	util.run(c, 'execute', 'st', string.format([[
+	driver.run(c, 'create', 'st', 256 * 1024)
+	driver.run(c, 'execute', 'st', string.format([[
 		local timeout = %d
 		timer.create(timeout, function() end)
 	]], basetimeout))
@@ -145,7 +146,6 @@ util.test('timer close module', function()
 	local msg = assert(f:read())
 	assert(msg == 'rmmod: ERROR: Module nflua is in use')
 
-	os.execute('sleep ' .. basetimeout / 1000)
-	assert(os.execute'sudo rmmod nflua')
-	assert(os.execute'sudo insmod ./src/nflua.ko')
+	util.assertexec('sleep %q', basetimeout / 1000)
+	driver.reloadmodule()
 end)

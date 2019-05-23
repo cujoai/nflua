@@ -16,32 +16,19 @@
 -- 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 --
 
-local util = {}
+local socket = require'socket'
 
-math.randomseed(os.time())
+local addr = assert(arg[1])
+local port = assert(tonumber(arg[2]))
+local timeout = assert(tonumber(arg[3]))
 
-function util.gentoken(n)
-	n = n or 16
-	local s = {}
-	for i = 1, n do
-		s[i] = math.random(0, 9)
-	end
-	return table.concat(s)
+local server = assert(socket.bind(addr, port))
+server:settimeout(timeout * 2)
+local client = server:accept()
+if client then
+	client:settimeout(timeout)
+	local msg = client:receive()
+	if msg then client:send(msg .. '\n') end
+	client:close()
 end
-
-function util.pipeexec(cmd, ...)
-	local f = assert(io.popen(string.format(cmd, ...)))
-	local out = f:read'a'
-	local ok = f:close()
-	return ok, out
-end
-
-function util.assertexec(cmd, ...)
-	assert(os.execute(string.format(cmd, ...)))
-end
-
-function util.silentexec(cmd, ...)
-	return os.execute(string.format(cmd, ...) .. ' > /dev/null 2>&1')
-end
-
-return util
+server:close()
