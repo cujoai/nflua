@@ -22,22 +22,67 @@ local network = {}
 
 local timeout = 0.5 -- seconds
 
-local iface = 'lo'
-local chain = 'NFLUA_TEST_INPUT'
-local jmprule = 'INPUT -j ' .. chain
+local prefix = 'nflua_'
+local svnet = prefix .. 'svnet'
+local clnet = prefix .. 'clnet'
+local wan0 = prefix .. 'wan0'
+local lan0 = prefix .. 'lan0'
+local br0 = prefix .. 'br0'
 
-network.svaddr = '127.0.0.1'
+local svaddr = '10.0.33.1'
+local wan0addr = '10.0.33.2'
+local claddr = '10.0.34.2'
+local lan0addr = '10.0.34.1'
+
+local chain = 'NFLUA_TEST_FORWARD'
+local jmprule = 'FORWARD -j ' .. chain
+
+network.svaddr = svaddr
 network.svport = 12345
 
-network.toserver = string.format('%s -i %s -d %s -p tcp --dport %s',
-	chain, iface, network.svaddr, network.svport)
+network.toserver = string.format('%s -i %s -d %s -p tcp', chain, br0, svaddr)
+network.toclient = string.format('%s -i %s -d %s -p tcp', chain, br0, claddr)
+
+local function createnet(netname, addr, iface)
+	util.assertexec('ip netns add %s', netname)
+	util.assertexec('ip link add eth0 netns %s type veth peer name %s',
+		netname, iface)
+
+	util.assertexec('ip link set %s up', iface)
+	util.assertexec('ip -n %s link set eth0 up', netname)
+
+	util.assertexec('ip -n %s addr add %s/24 dev eth0', netname, addr)
+	util.assertexec('ip -n %s route add default via %s', netname, addr)
+end
 
 function network.setup()
+	createnet(svnet, svaddr, wan0)
+	createnet(clnet, claddr, lan0)
+
+	util.assertexec('ip link add name %s type bridge', br0)
+	util.assertexec('ip link set %s up', br0)
+	util.assertexec('ip link set %s master %s', wan0, br0)
+	util.assertexec('ip link set %s master %s', lan0, br0)
+	util.assertexec('ip addr add %s/24 dev %s', wan0addr, wan0)
+	util.assertexec('ip addr add %s/24 dev %s', lan0addr, br0)
+
+	util.assertexec'modprobe br_netfilter'
+	util.assertexec'echo 1 > /proc/sys/net/ipv4/ip_forward'
+
 	util.assertexec('iptables -N %s', chain)
 	util.assertexec('iptables -I %s', jmprule)
 end
 
 function network.cleanup()
+	util.silentexec('ip netns del %s', svnet)
+	util.silentexec('ip netns del %s', clnet)
+	util.silentexec('ip link del %s', wan0)
+	util.silentexec('ip link del %s', lan0)
+	util.silentexec('ip link del %s', br0)
+
+	util.silentexec'rmmod br_netfilter'
+	util.silentexec'echo 0  > /proc/sys/net/ipv4/ip_forward'
+
 	util.silentexec('iptables -D %s', jmprule)
 	util.silentexec('iptables -F %s', chain)
 	util.silentexec('iptables -X %s', chain)
@@ -47,23 +92,21 @@ function network.flush()
 	util.assertexec('iptables -F %s', chain)
 end
 
-function network.gentraffic(data)
-	util.assertexec('lua tests/server.lua %q %q %q &', network.svaddr,
-		network.svport, timeout)
+local function gentraffic(data)
+	util.assertexec('ip netns exec %s lua tests/server.lua %q %q %q &',
+		svnet, network.svaddr, network.svport, timeout)
 	util.assertexec('sleep %q', timeout)
-	local _, out = assert(util.pipeexec('lua tests/client.lua %q %q %q %q',
-		network.svaddr, network.svport, timeout, data))
+	local _, out = assert(util.pipeexec(
+		'ip netns exec %s lua tests/client.lua %q %q %q %q',
+		clnet, network.svaddr, network.svport, timeout, data))
 	util.assertexec('sleep %q', timeout)
 	return out
 end
 
-function network.asserttraffic()
-	local token = util.gentoken()
-	assert(network.gentraffic(token) == token)
-end
-
-function network.assertnotraffic()
-	assert(network.gentraffic(util.gentoken()) == '')
+function network.asserttraffic(output, input)
+	input = input or util.gentoken()
+	output = output or input
+	assert(gentraffic(input) == output)
 end
 
 return network

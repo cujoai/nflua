@@ -81,11 +81,7 @@ driver.test('match valid return values', function ()
 	}
 	for _, case in ipairs(cases) do
 		driver.run(c, 'execute', 'st', case.code)
-		if case.drop then
-			network.assertnotraffic()
-		else
-			network.asserttraffic()
-		end
+		network.asserttraffic(case.drop and '')
 	end
 end)
 
