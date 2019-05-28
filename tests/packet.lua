@@ -16,7 +16,20 @@
 -- 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 --
 
-dofile'tests/lib.lua'
-dofile'tests/timer.lua'
-dofile'tests/match.lua'
-dofile'tests/packet.lua'
+local driver = require'tests.driver'
+local network = require'tests.network'
+local util = require'tests.util'
+
+driver.test('packet tcpreply', function ()
+	local token = util.gentoken()
+	local code = string.format([[
+		function f()
+			nf.reply('tcp', %q .. '\n')
+			return false
+		end
+	]], token)
+	driver.setup('st', code)
+	util.assertexec('iptables -A ' .. network.toserver ..
+		' -m lua --tcp-payload --state st --function f')
+	network.asserttraffic(token)
+end)
