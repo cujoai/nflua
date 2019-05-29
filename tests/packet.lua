@@ -20,16 +20,141 @@ local driver = require'tests.driver'
 local network = require'tests.network'
 local util = require'tests.util'
 
+local targetrule = 'iptables -A ' .. network.toclient ..
+	' --tcp-flags PSH PSH -j LUA --state st --function f'
+local matchrule = 'iptables -A ' .. network.toserver ..
+	' -m lua --tcp-payload --state st --function f -j DROP'
+
+driver.test('packet close', function()
+	local code = [[
+		function f()
+			local packet = nf.getpacket()
+			packet:close()
+			return 'stolen'
+		end
+	]]
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic('')
+end)
+
+local function afterclose(fname)
+	local code = string.format([[
+		function f()
+			local packet = nf.getpacket()
+			packet:close()
+			packet[%q](packet)
+			return 'stolen'
+		end
+	]], fname)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic('')
+	driver.matchdmesg(3, 'closed packet')
+end
+
+local cases = {
+	'send',
+	'close',
+}
+
+for _, case in ipairs(cases) do
+	driver.test('packet close after ' .. case, afterclose, case)
+end
+
+driver.test('packet send', function()
+	local code = [[
+		function f()
+			nf.getpacket():send()
+			return 'stolen'
+		end
+	]]
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+end)
+
+driver.test('packet send payload', function()
+	local token = util.gentoken()
+	local code = string.format([[
+		function f()
+			nf.getpacket():send(%q .. '\n')
+			return 'stolen'
+		end
+	]], token)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic(token)
+end)
+
+driver.test('packet send timer', function()
+	local code = [[
+		function f()
+			local packet = nf.getpacket()
+			timer.create(1, function()
+				packet:send()
+			end)
+			return 'stolen'
+		end
+	]]
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+end)
+
+driver.test('packet send not stolen', function()
+	local code = [[
+		function f()
+			local packet = nf.getpacket()
+			timer.create(1, function()
+				packet:send()
+			end)
+			return 'drop'
+		end
+	]]
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+end)
+
+driver.test('packet send twice', function()
+	local code = [[
+		function f()
+			local packet = nf.getpacket()
+			packet:send()
+			packet:send()
+			return 'stolen'
+		end
+	]]
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	driver.matchdmesg(3, 'closed packet')
+end)
+
+driver.test('packet send match', function ()
+	local token = util.gentoken()
+	local code = string.format([[
+		function f()
+			nf.getpacket():send()
+			return true
+		end
+	]], token)
+	driver.setup('st', code)
+	util.assertexec(matchrule)
+	network.asserttraffic()
+	driver.matchdmesg(3, 'not on target context')
+end)
+
 driver.test('packet tcpreply', function ()
 	local token = util.gentoken()
 	local code = string.format([[
 		function f()
 			nf.reply('tcp', %q .. '\n')
-			return false
+			return true
 		end
 	]], token)
 	driver.setup('st', code)
-	util.assertexec('iptables -A ' .. network.toserver ..
-		' -m lua --tcp-payload --state st --function f')
+	util.assertexec(matchrule)
 	network.asserttraffic(token)
 end)
