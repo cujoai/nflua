@@ -1,20 +1,20 @@
 [submodule "deps/luajson"]
 	path = deps/luajson
-	url = https://github.com/getCUJO/luajson.git
+	url = https://github.com/cujoai/luajson.git
 	branch = master
 [submodule "deps/lunatik"]
 	path = deps/lunatik
-	url = https://github.com/getCUJO/lunatik.git
+	url = https://github.com/cujoai/lunatik.git
 	branch = master
 [submodule "deps/luadata"]
 	path = deps/luadata
-	url = https://github.com/lneto/luadata.git
+	url = https://github.com/cujoai/luadata.git
 	branch = master
 [submodule "deps/luabase64"]
 	path = deps/luabase64
-	url = https://github.com/getCUJO/luabase64.git
+	url = https://github.com/cujoai/luabase64.git
 	branch = master
 [submodule "deps/lunatik-tests"]
 	path = deps/lunatik-tests
-	url = https://github.com/getCUJO/lunatik-tests.git
-	branch = apfigueiredo_62
+	url = https://github.com/cujoai/lunatik-tests.git
+	branch = master
