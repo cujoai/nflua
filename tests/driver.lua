@@ -76,11 +76,17 @@ function driver.failrun(s, msg, cmd, ...)
 	driver.matchdmesg(3, msg)
 end
 
-function driver.setup(st, code)
+function driver.setup(st, code, loadutil)
 	local c = assert(nflua.control())
 	driver.run(c, 'create', st)
 	if code then
 		driver.run(c, 'execute', st, code)
+	end
+	if loadutil then
+		local path = package.searchpath('tests.nfutil', package.path)
+		local f = io.open(path)
+		driver.run(c, 'execute', st, f:read'a')
+		f:close()
 	end
 	return c
 end

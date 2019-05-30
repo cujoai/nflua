@@ -44,6 +44,12 @@ network.svport = 12345
 network.toserver = string.format('%s -i %s -d %s -p tcp', chain, br0, svaddr)
 network.toclient = string.format('%s -i %s -d %s -p tcp', chain, br0, claddr)
 
+function network.svmac()
+	local _, out = assert(util.pipeexec('ip -n %s link show %s', svnet,
+		eth0))
+	return string.match(out, string.rep('%w%w', 6, ':'))
+end
+
 local function createnet(netname, addr, iface)
 	util.assertexec('ip netns add %s', netname)
 	util.assertexec('ip link add %s netns %s type veth peer name %s',

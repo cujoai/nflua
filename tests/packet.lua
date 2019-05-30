@@ -158,3 +158,26 @@ driver.test('packet tcpreply', function ()
 	util.assertexec(matchrule)
 	network.asserttraffic(token)
 end)
+
+driver.test('packet contents', function ()
+	local token = util.gentoken()
+	local code = string.format([[
+		local token, svmac, svaddr, svport = %q, %q, %q, %d
+
+		function f(frame, payload)
+			local mac = util.mac(frame)
+			assert(util.tomac(mac.dst) == svmac)
+
+			local ip, tcp, data = util.iptcp(payload)
+			assert(ip.version == 4)
+			assert(util.toip(ip.dst) == svaddr)
+			assert(tcp.dport == svport)
+			assert(token .. '\n' == tostring(data))
+
+			return true
+		end
+	]], token, network.svmac(), network.svaddr, network.svport)
+	driver.setup('st', code, true)
+	util.assertexec(matchrule)
+	network.asserttraffic('', token)
+end)
