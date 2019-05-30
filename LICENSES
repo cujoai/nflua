@@ -5,6 +5,7 @@ in connection with the NFLua product.
 
 Luadata
 
+Copyright (c) 2017-2019, CUJO LLC.
 Copyright (c) 2013, 2014 Lourival Vieira Neto <lneto@NetBSD.org>.
 All rights reserved.
 
@@ -33,7 +34,7 @@ SUCH DAMAGE.
 
 Luajson
 
-Copyright (c) 2017 - 2018, CUJO LLC.
+Copyright (c) 2017-2019, CUJO LLC.
 Copyright (c) 2011 - 2016, Micro Systems Marc Balmer, CH-5073 Gipf-Oberfrick
 All rights reserved.
 
@@ -61,7 +62,7 @@ THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Lunatik
 
-Copyright (c) 2017-2018, CUJO LLC.
+Copyright (c) 2017-2019, CUJO LLC.
 Copyright (c) 2016-2016, Lourival Vieira Neto <lneto@NetBSD.org>.
 Copyright (C) 1994-2017 Lua.org, PUC-Rio.
 
@@ -88,7 +89,7 @@ Lunatik-tests
 
 The MIT License (MIT)
 
-Copyright (c) 2017-2018 CUJO LLC.
+Copyright (c) 2017-2019 CUJO LLC.
 Copyright (c) 2015 Guilherme Salazar.
 Copyright (c) 2006-2015 PUC-Rio.
 
