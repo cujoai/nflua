@@ -225,6 +225,12 @@ error:
 	return luaL_error(L, "couldn't reply a packet");
 }
 
+// the kernel on atom-based puma7 uses a different
+// function prototype for nlmsg_unicast
+#ifdef CUJO_ATOM_NLMSG_UNICAST
+#define nlmsg_unicast(sk, skb, portid) nlmsg_unicast((sk), (skb), (portid), 0)
+#endif
+
 #define nlmsg_send(sock, skb, pid, group) \
 	((group == 0) ? nlmsg_unicast(sock, skb, pid) : \
 		nlmsg_multicast(sock, skb, pid, group, 0))
