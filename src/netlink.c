@@ -24,7 +24,7 @@
 #include <linux/slab.h>
 #include <net/sock.h>
 
-#include <luadata.h>
+#include <lmemlib.h>
 
 #include "luautil.h"
 #include "netlink.h"
@@ -378,14 +378,27 @@ out:
 
 static int nflua_doexec(lua_State *L)
 {
-	int error, buf_ref = LUA_NOREF;
-	struct nflua_frag_request *req = lua_touserdata(L, 3);
+	int error;
+	struct nflua_frag_request *req = lua_touserdata(L, 2);
 
 	lua_pop(L, 1);
-	buf_ref = ldata_newref(L, req->buffer, req->total);
+
+	luamem_newref(L);
+	luamem_setref(L, -1, req->buffer, req->total, NULL);
+
+	if (lua_getglobal(L, DATA_RECV_FUNC) != LUA_TFUNCTION)
+		return luaL_error(L, "couldn't find receive function: %s\n",
+				DATA_RECV_FUNC);
+
+	lua_pushvalue(L, 1); /* pid */
+	lua_pushvalue(L, 2); /* memory */
+
 	error = lua_pcall(L, 2, 0, 0);
-	ldata_unref(L, buf_ref);
-	if (error) lua_error(L);
+
+	luamem_setref(L, 2, NULL, 0, NULL);
+
+	if (error)
+		lua_error(L);
 
 	return 0;
 }
@@ -396,6 +409,7 @@ static int nflua_exec(struct xt_lua_net *xt_lua, u32 pid,
 	struct nflua_frag_request *req = &client->request;
 	struct nflua_state *s;
 	int error = 0;
+	int base;
 
 	if ((s = nflua_state_lookup(xt_lua, client->request.name)) == NULL) {
 		pr_err("lua state not found\n");
@@ -411,35 +425,28 @@ static int nflua_exec(struct xt_lua_net *xt_lua, u32 pid,
 	if (s->L == NULL) {
 		pr_err("invalid lua state");
 		error = -ENOENT;
-		goto out;
+		goto unlock;
 	}
+
+	base = lua_gettop(s->L);
 
 	if (client->msgtype == NFLMSG_DATA) {
 		lua_pushcfunction(s->L, nflua_doexec);
-
-		if (lua_getglobal(s->L, DATA_RECV_FUNC) != LUA_TFUNCTION) {
-			pr_err("%s: %s\n", "couldn't find receive function",
-					DATA_RECV_FUNC);
-			lua_pop(s->L, 1); /* doexec */
-			error = -ENOENT;
-			goto out;
-		}
-
 		lua_pushinteger(s->L, pid);
 		lua_pushlightuserdata(s->L, req);
 
-		if (luaU_pcall(s->L, 3, 0)) {
+		if (luaU_pcall(s->L, 2, 0)) {
 			pr_err("%s\n", lua_tostring(s->L, -1));
-			lua_pop(s->L, 1);
 			error = -EIO;
 		}
 	} else if ((error = luaU_dostring(s->L, req->buffer, req->total,
 					  req->script)) != 0) {
 		pr_err("%s\n", lua_tostring(s->L, -1));
-		lua_pop(s->L, 1); /* error */
 		error = -EIO;
 	}
-out:
+
+	lua_settop(s->L, base);
+unlock:
 	spin_unlock_bh(&s->lock);
 	nflua_state_put(s);
 	return error;

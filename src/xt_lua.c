@@ -25,7 +25,7 @@
 #include <net/netns/generic.h>
 
 #include <lua.h>
-#include <luadata.h>
+#include <lmemlib.h>
 
 #include "xt_lua.h"
 #include "nf_util.h"
@@ -81,21 +81,27 @@ static int nflua_docall(lua_State *L)
 
 	luaU_setregval(L, nflua_ctx, ctx);
 
+	luamem_newref(L);
+	luamem_setref(L, -1, skb_mac_header(skb), kpi_skb_mac_header_len(skb), NULL);
+
+	luamem_newref(L);
+	luamem_setref(L, -1, skb->data, skb->len, NULL);
+
 	if (lua_getglobal(L, ctx->mtinfo->func) != LUA_TFUNCTION)
 		return luaL_error(L, "couldn't find function: %s\n",
 		                  ctx->mtinfo->func);
 
-	if (skb_linearize(skb) != 0)
-		return luaL_error(L, "skb linearization failed.\n");
-
-	ctx->frame = ldata_newref(L, skb_mac_header(skb),
-		kpi_skb_mac_header_len(skb));
-	ctx->packet = ldata_newref(L, skb->data, skb->len);
+	lua_pushvalue(L, 2);
+	lua_pushvalue(L, 3);
 
 	error = lua_pcall(L, 2, 1, 0);
 
+	luamem_setref(L, 2, NULL, 0, NULL);
+	luamem_setref(L, 3, NULL, 0, NULL);
+
 	luaU_setregval(L, nflua_ctx, NULL);
-	if (ctx->lskb) luaU_unregisterudata(L, ctx->lskb);
+	if (ctx->lskb)
+		luaU_unregisterudata(L, ctx->lskb);
 
 	if (error)
 		return lua_error(L);
@@ -136,8 +142,7 @@ static union call_result nflua_call(struct sk_buff *skb,
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 	struct nflua_ctx ctx = {.skb = skb, .hooknum = kpi_xt_hooknum(par),
-		.mtinfo = info, .frame = LUA_NOREF, .packet = LUA_NOREF,
-		.mode = mode, .lskb = NULL};
+		.mtinfo = info, .mode = mode, .lskb = NULL};
 	lua_State *L = info->state->L;
 	union call_result r;
 	int base;
@@ -149,6 +154,11 @@ static union call_result nflua_call(struct sk_buff *skb,
 	case NFLUA_TARGET:
 		r.tg = XT_CONTINUE;
 		break;
+	}
+
+	if (skb_linearize(skb) != 0) {
+		pr_err("skb linearization failed\n");
+		return r;
 	}
 
 	spin_lock(&info->state->lock);
@@ -190,8 +200,6 @@ cleanup:
 			r.tg = XT_CONTINUE;
 	}
 
-	ldata_unref(L, ctx.frame);
-	ldata_unref(L, ctx.packet);
 	lua_settop(L, base);
 unlock:
 	spin_unlock(&info->state->lock);

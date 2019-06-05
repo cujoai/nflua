@@ -27,9 +27,7 @@
 #include <lauxlib.h>
 #include <lualib.h>
 
-#include <handle.h>
-#include <data.h>
-#include <luadata.h>
+#include <lmemlib.h>
 
 #include "luautil.h"
 #include "xt_lua.h"
@@ -66,44 +64,19 @@ error:
 	return luaL_error(L, "couldn't reply a packet");
 }
 
-static void *checkldata(lua_State *L, int idx, size_t *size)
-{
-	data_t *ld = (data_t *)luaL_checkudata(L, idx, DATA_USERDATA);
-	single_t *single;
-
-	if (ld->handle->type != HANDLE_TYPE_SINGLE)
-		luaL_argerror(L, idx, "invalid ldata handle type");
-
-	single = &ld->handle->bucket.single;
-	if (single->ptr == NULL)
-		luaL_argerror(L, idx, "invalid ldata pointer");
-
-	*size = ld->length - ld->offset;
-	return (char *)single->ptr + ld->offset;
-}
-
 static int nflua_netlink(lua_State *L)
 {
 	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
 	int pid = luaL_checkinteger(L, 1);
 	int group = luaL_optinteger(L, 2, 0);
-	const void *payload;
+	const char *payload;
 	size_t size;
 	int err;
 
 	if (s == NULL)
 		return luaL_error(L, "invalid nflua_state");
 
-	switch (lua_type(L, 3)) {
-	case LUA_TSTRING:
-		payload = luaL_checklstring(L, 3, &size);
-		break;
-	case LUA_TUSERDATA:
-		payload = checkldata(L, 3, &size);
-		break;
-	default:
-		return luaL_argerror(L, 3, "must be string or ldata");
-	}
+	payload = luamem_checkstring(L, 3, &size);
 
 	if ((err = nflua_nl_send_data(s, pid, group, payload, size)) < 0)
 		return luaL_error(L, "failed to send message. Return code %d", err);

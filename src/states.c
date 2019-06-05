@@ -34,8 +34,8 @@
 #define NFLUA_SETPAUSE	100
 #endif /* NFLUA_SETPAUSE */
 
-#define LUA_DATALIBNAME "data"
-extern int luaopen_data(lua_State* L);
+#define LUA_MEMORYLIBNAME "memory"
+extern int luaopen_memory(lua_State* L);
 #define LUA_NFLIBNAME "nf"
 extern int luaopen_nf(lua_State* L);
 #define LUA_TIMERLIBNAME "timer"
@@ -123,7 +123,7 @@ static int state_init(struct nflua_state *s)
 	luaU_setenv(s->L, s, struct nflua_state);
 	luaL_openlibs(s->L);
 
-	luaL_requiref(s->L, LUA_DATALIBNAME, luaopen_data, 1);
+	luaL_requiref(s->L, LUA_MEMORYLIBNAME, luaopen_memory, 1);
 	luaL_requiref(s->L, LUA_NFLIBNAME, luaopen_nf, 1);
 	luaL_requiref(s->L, LUA_TIMERLIBNAME, luaopen_timer, 1);
 	lua_pop(s->L, 3);
