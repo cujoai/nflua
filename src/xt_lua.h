@@ -23,6 +23,8 @@
 
 #define XT_LUA_FUNC_SIZE	(1024)
 
+#define NETLINK_NFLUA      	31     /* NFLua netlink protocol family */
+
 enum {
 	XT_NFLUA_TCP_PAYLOAD = 0x01
 };
