@@ -17,6 +17,6 @@
 #
 
 subdir-ccflags-y += -D_MODULE -D_KERNEL -I $(src)/deps/lunatik -I$(src)/deps/lunatik/lua -I$(src)/ \
-	-I$(src)/deps/luadata/
+	-I$(src)/deps/lua-memory/src/
 
-obj-y := src/ deps/luadata/ deps/luajson/ deps/luabase64/ deps/lunatik-tests/ deps/lunatik/
+obj-y := src/ deps/lua-memory/ deps/luajson/ deps/luabase64/ deps/lunatik-tests/ deps/lunatik/
