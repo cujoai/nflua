@@ -205,10 +205,10 @@ static int nflua_findconnid(lua_State *L)
 	const int protonums[] = {IPPROTO_UDP, IPPROTO_TCP, 0};
 	int protonum = protonums[luaL_checkoption(L, 2, NULL, protoname)];
 	const char *saddr = luaL_checklstring(L, 3, &slen);
-	__be16 sport = htons(luaL_checknumber(L, 4));
+	lua_Integer sport = luaL_checknumber(L, 4);
 	const char *daddr = luaL_checklstring(L, 5, &dlen);
-	__be16 dport = htons(luaL_checknumber(L, 6));
-	int derr, serr;
+	lua_Integer dport = luaL_checknumber(L, 6);
+	int (*pton)(const char *, int, u8 *, int, const char **);
 	const char *end;
 
 	memset(&tuple, 0, sizeof(tuple));
@@ -216,24 +216,31 @@ static int nflua_findconnid(lua_State *L)
 	switch (family) {
 	case 4:
 		tuple.src.l3num = NFPROTO_IPV4;
-		serr = in4_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
-		derr = in4_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		pton = in4_pton;
 		break;
 	case 6:
 		tuple.src.l3num = NFPROTO_IPV6;
-		serr = in6_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
-		derr = in6_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		pton = in6_pton;
 		break;
 	default:
-		return luaL_error(L, "unknown family");
+		return luaL_argerror(L, 1, "unknown family");
 	}
 
-	if (!serr || !derr)
-		return luaL_error(L, "failed to convert address to binary");
+	if (!pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end))
+		luaL_argerror(L, 3, "failed to convert address to binary");
+
+	if (!pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end))
+		luaL_argerror(L, 5, "failed to convert address to binary");
+
+	if (sport <= 0 || sport > USHRT_MAX)
+		luaL_argerror(L, 4, "invalid port");
+
+	if (dport <= 0 || dport > USHRT_MAX)
+		luaL_argerror(L, 6, "invalid port");
 
 	tuple.dst.protonum = protonum;
-	tuple.src.u.all = sport;
-	tuple.dst.u.all = dport;
+	tuple.src.u.all = htons(sport);
+	tuple.dst.u.all = htons(dport);
 
 	hash = nf_conntrack_find_get(sock_net(s->xt_lua->sock), KPI_CT_DEFAULT_ZONE, &tuple);
 
