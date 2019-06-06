@@ -29,14 +29,9 @@ function driver.reloadmodule()
 	util.silentexec'sudo insmod ./src/nflua.ko'
 end
 
-local function cleanup()
-	network.cleanup()
-	driver.reloadmodule()
-end
-driver.cleanup = setmetatable({}, {__gc = cleanup})
-cleanup()
-
-network.setup()
+network.cleanup()
+util.silentexec'sudo rmmod nflua'
+util.silentexec'sudo insmod ./src/nflua.ko'
 
 local function receiveall(s)
 	local ret
@@ -57,9 +52,10 @@ end
 
 function driver.test(name, f, ...)
 	print('testing', name)
+	network.setup()
 	f(...)
 	collectgarbage()
-	network.flush()
+	network.cleanup()
 	driver.reloadmodule()
 end
 
@@ -78,7 +74,7 @@ end
 
 function driver.setup(st, code, loadutil)
 	local c = assert(nflua.control())
-	driver.run(c, 'create', st)
+	driver.run(c, 'create', st, 1024 ^ 3)
 	if code then
 		driver.run(c, 'execute', st, code)
 	end

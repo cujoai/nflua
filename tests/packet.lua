@@ -38,12 +38,12 @@ driver.test('packet close', function()
 	network.asserttraffic('')
 end)
 
-local function afterclose(fname)
+driver.test('packet close then send', function()
 	local code = string.format([[
 		function f()
 			local packet = nf.getpacket()
 			packet:close()
-			packet[%q](packet)
+			packet:send(packet)
 			return 'stolen'
 		end
 	]], fname)
@@ -51,16 +51,7 @@ local function afterclose(fname)
 	util.assertexec(targetrule)
 	network.asserttraffic('')
 	driver.matchdmesg(3, 'closed packet')
-end
-
-local cases = {
-	'send',
-	'close',
-}
-
-for _, case in ipairs(cases) do
-	driver.test('packet close after ' .. case, afterclose, case)
-end
+end)
 
 driver.test('packet send', function()
 	local code = [[

@@ -43,6 +43,7 @@ network.svport = 12345
 
 network.toserver = string.format('%s -i %s -d %s -p tcp', chain, br0, svaddr)
 network.toclient = string.format('%s -i %s -d %s -p tcp', chain, br0, claddr)
+network.toany = string.format('%s -i %s', chain, br0)
 
 function network.svmac()
 	local _, out = assert(util.pipeexec('ip -n %s link show %s', svnet,
@@ -93,10 +94,6 @@ function network.cleanup()
 	util.silentexec('iptables -D %s', jmprule)
 	util.silentexec('iptables -F %s', chain)
 	util.silentexec('iptables -X %s', chain)
-end
-
-function network.flush()
-	util.assertexec('iptables -F %s', chain)
 end
 
 local function gentraffic(data)
