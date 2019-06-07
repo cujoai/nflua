@@ -17,7 +17,6 @@
 --
 
 local nflua = require'nflua'
-local data = require'data'
 
 local driver = require'tests.driver'
 local util = require'tests.util'

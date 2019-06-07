@@ -17,7 +17,7 @@
 --
 
 local nflua = require'nflua'
-local data = require'data'
+local memory = require'memory'
 
 local driver = require'tests.driver'
 local network = require'tests.network'
@@ -281,19 +281,19 @@ driver.test('data.send', function()
 	local s = assert(nflua.data())
 
 	local token = util.gentoken()
-	assert(s:send('st', data.new(token)) == true)
+	assert(s:send('st', memory.create(token)) == true)
 	local buff, state = driver.datareceive(s)
-	assert(tostring(buff) == token)
+	assert(buff == token)
 	assert(state == 'st')
 
 	token = util.gentoken(nflua.datamaxsize + 1)
-	local ok, err = s:send('st', data.new(token))
+	local ok, err = s:send('st', memory.create(token))
 	assert(ok == nil)
 	assert(err == 'Operation not permitted')
 
 	local ok, err = pcall(s.send, s, 'st', 0)
 	assert(ok == false)
-	assert(err == argerror(3, 'expected ldata object'))
+	assert(err == argerror(3, 'memory expected, got number'))
 end)
 
 driver.test('data.receive', function()
@@ -303,7 +303,7 @@ driver.test('data.receive', function()
 
 	local ok, err = pcall(s.receive, s, 0, 0)
 	assert(ok == false)
-	assert(err == argerror(2, 'expected ldata object'))
+	assert(err == argerror(2, 'memory expected, got number'))
 
 	local code = string.format([[
 		nf.netlink(%d, nil, string.rep('x', 65000))

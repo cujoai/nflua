@@ -17,6 +17,7 @@
 --
 
 local nflua = require'nflua'
+local memory = require'memory'
 
 local network = require'tests.network'
 local util = require'tests.util'
@@ -44,9 +45,9 @@ local function receiveall(s)
 end
 
 function driver.datareceive(s)
-	local buff = data.new(nflua.datamaxsize)
+	local buff = memory.create(nflua.datamaxsize)
 	local recv, state = assert(s:receive(buff, 0))
-	return buff:segment(0, recv), state
+	return memory.tostring(buff, 1, recv), state
 end
 
 function driver.run(s, cmd, ...)
