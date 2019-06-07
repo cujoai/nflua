@@ -56,5 +56,5 @@ sudo insmod ./src/nflua.ko
 Running tests:
 
 ```
-sudo LD_LIBRARY_PATH=./lib:./deps/luadata LUA_CPATH="./lua/?.so;;" lua tests/all.lua
+sudo LD_LIBRARY_PATH=./lib:./deps/lua-memory/src LUA_CPATH="./lua/?.so;;" lua tests/all.lua
 ```

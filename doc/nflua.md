@@ -160,10 +160,10 @@ Returns the port ID number of data socket `data`.
 
 ### `data:send(state, buffer)`
 
-Sends data from the LuaData object `buffer` using socket `data` to the Lua state with name `state` in NFLua kernel module.
+Sends data from the [memory](https://github.com/cujoai/lua-memory/blob/master/doc/manual.md) `buffer` using socket `data` to the Lua state with name `state` in NFLua kernel module.
 
 ### `recv, state = data:receive(buffer, offset)`
 
-Receives a data message in the LuaData object `buffer` starting at the given `offset` (integer).
+Receives a data message in the [memory](https://github.com/cujoai/lua-memory/blob/master/doc/manual.md) `buffer` starting at the given `offset` (integer).
 There should be at least `nflua.datamaxsize` bytes available in `buffer` to receive a chunk of the message.
 Returns the number of bytes read and the state that sent the message.
