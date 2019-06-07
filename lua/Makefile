@@ -17,9 +17,9 @@
 #
 
 CC = gcc
-CFLAGS = -fPIC -Wall -Wextra -O2 -g -I../src -I../lib -I../deps/luadata \
+CFLAGS = -fPIC -Wall -Wextra -O2 -g -I../src -I../lib -I../deps/lua-memory/src \
 	-I/usr/include/lua5.3/
-LDFLAGS = -shared -L../lib -lnflua -L../deps/luadata -l:data.so
+LDFLAGS = -shared -L../lib -lnflua -L../deps/lua-memory/src -l:memory.so
 RM = rm -f
 
 LIBS = nflua.so

@@ -22,9 +22,11 @@
 #include <unistd.h>
 
 #include <lauxlib.h>
-#include <luadata.h>
+#include <lmemlib.h>
 #include <lua.h>
 #include <nflua.h>
+
+extern int luaopen_memory(lua_State *L);
 
 #define DEFAULT_MAXALLOC_BYTES	(32 * 1024)
 
@@ -299,9 +301,9 @@ static int ldata_send(lua_State *L)
 	struct nflua_data *dch = getdata(L);
 	const char *name = luaL_checkstring(L, 2);
 	size_t size;
-	char *buffer = ldata_topointer(L, 3, &size);
+	const char *buffer = luamem_checkmemory(L, 3, &size);
 
-	if (buffer == NULL) luaL_argerror(L, 3, "expected ldata object");
+	if (buffer == NULL) luaL_argerror(L, 3, "expected non NULL memory object");
 
 	return pushioresult(L, nflua_data_send(dch, name, buffer, size));
 }
@@ -312,9 +314,9 @@ static int ldata_receive(lua_State *L)
 	char state[NFLUA_NAME_MAXSIZE] = {0};
 	size_t size, offset;
 	int recv;
-	char *buffer = ldata_topointer(L, 2, &size);
+	char *buffer = luamem_checkmemory(L, 2, &size);
 
-	if (buffer == NULL) luaL_argerror(L, 2, "expected ldata object");
+	if (buffer == NULL) luaL_argerror(L, 2, "expected non NULL memory object");
 
 	offset = luaL_checkinteger(L, 3);
 	if (offset >= size || size - offset < NFLUA_DATA_MAXSIZE)
@@ -367,7 +369,7 @@ static void setconst(lua_State *L, const char *name, lua_Integer value)
 
 int luaopen_nflua(lua_State *L)
 {
-	luaL_requiref(L, "data", luaopen_data, 1);
+	luaL_requiref(L, "memory", luaopen_memory, 1);
 	lua_pop(L, 1);
 
 	newclass(L, "nflua.control", control_mt);
