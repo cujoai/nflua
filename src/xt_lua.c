@@ -1,22 +1,23 @@
 /*
- * Copyright (C) 2017-2019 CUJO LLC
+ * Copyright (C) 2017-2019  CUJO LLC
  *
- * This program is free software; you can redistribute it and/or
- * modify it under the terms of the GNU General Public License
- * as published by the Free Software Foundation; either version 2
- * of the License, or (at your option) any later version.
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
  *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#include <linux/ratelimit.h>
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/printk.h>
@@ -41,6 +42,11 @@
 #include <linux/jiffies.h>
 #include <linux/timer.h>
 
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_zones.h>
+#include <net/netfilter/nf_conntrack_acct.h>
+
 #include <lua.h>
 #include <lauxlib.h>
 #include <lualib.h>
@@ -51,11 +57,22 @@
 #include "nf_util.h"
 #include "luautil.h"
 
+#ifndef NFLUA_SETPAUSE
+#define NFLUA_SETPAUSE	100
+#endif /* NFLUA_SETPAUSE */
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
 static inline u32 skb_mac_header_len(const struct sk_buff *skb)
 {
 	return skb->network_header - skb->mac_header;
 }
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#define kpi_nf_conn_acct_find(ct) \
+	(nf_conn_acct_find(ct) == NULL ? NULL : nf_conn_acct_find(ct)->counter)
+#else
+#define kpi_nf_conn_acct_find(ct)      nf_conn_acct_find(ct)
 #endif
 
 MODULE_LICENSE("GPL");
@@ -69,6 +86,8 @@ MODULE_DESCRIPTION("Netfilter Lua module");
 
 static int xt_lua_net_id __read_mostly;
 struct xt_lua_net {
+	struct net *net;
+	size_t alloc;
 	lua_State *L;
 	spinlock_t lock;
 };
@@ -300,29 +319,22 @@ static int nflua_skb_send(lua_State *L)
 
 		/* Original packet is not needed anymore */
 		kfree_skb(*lskb);
-		*lskb = NULL;
 	} else {
 		if (unlikely(skb_shared(*lskb)))
 			return luaL_error(L, "cannot send a shared skb");
 		nskb = *lskb;
 	}
+	*lskb = NULL;
 
 	if (route_me_harder(nskb)) {
-		pr_err("unable to route packet");
-		goto error;
-	}
-
-	if (tcp_send(nskb) != 0) {
-		pr_err("unable to send packet");
-		goto error;
-	}
-
-	*lskb = NULL;
-	return 0;
-error:
-	if (*lskb == NULL && nskb != NULL)
 		kfree_skb(nskb);
-	return luaL_error(L, "send packet error");
+		luaL_error(L, "unable to route packet");
+	}
+
+	if (tcp_send(nskb))
+		luaL_error(L, "unable to send packet");
+
+	return 0;
 }
 
 static int nflua_getpacket(lua_State *L)
@@ -537,6 +549,91 @@ int nflua_hotdrop(lua_State *L)
 	return 0;
 }
 
+static int nflua_findconnid(lua_State *L)
+{
+	struct xt_lua_net *xt_lua = luaU_getenv(L, struct xt_lua_net);
+	struct nf_conn *conn;
+	struct nf_conntrack_tuple tuple;
+	struct nf_conntrack_tuple_hash *hash;
+	size_t slen, dlen;
+	lua_Integer family = luaL_checkinteger(L, 1);
+	const char *protoname[] = {"udp", "tcp", NULL};
+	const int protonums[] = {IPPROTO_UDP, IPPROTO_TCP, 0};
+	int protonum = protonums[luaL_checkoption(L, 2, NULL, protoname)];
+	const char *saddr = luaL_checklstring(L, 3, &slen);
+	__be16 sport = htons(luaL_checknumber(L, 4));
+	const char *daddr = luaL_checklstring(L, 5, &dlen);
+	__be16 dport = htons(luaL_checknumber(L, 6));
+	int derr, serr;
+	const char *end;
+
+	memset(&tuple, 0, sizeof(tuple));
+
+	switch (family) {
+	case 4:
+		tuple.src.l3num = NFPROTO_IPV4;
+		serr = in4_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in4_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	case 6:
+		tuple.src.l3num = NFPROTO_IPV6;
+		serr = in6_pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end);
+		derr = in6_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
+		break;
+	default:
+		return luaL_error(L, "unknown family");
+	}
+
+	if (!serr || !derr)
+		return luaL_error(L, "failed to convert address to binary");
+
+	tuple.dst.protonum = protonum;
+	tuple.src.u.all = sport;
+	tuple.dst.u.all = dport;
+
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,3,0)
+	hash = nf_conntrack_find_get(xt_lua->net, NF_CT_DEFAULT_ZONE, &tuple);
+#else
+	hash = nf_conntrack_find_get(xt_lua->net, &nf_ct_zone_dflt, &tuple);
+#endif
+
+	if (hash == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "connid entry not found");
+		return 2;
+	}
+
+	conn = nf_ct_tuplehash_to_ctrack(hash);
+	lua_pushlightuserdata(L, conn);
+
+	return 1;
+}
+
+static int nflua_traffic(lua_State *L)
+{
+	static const char *const directions[] = {
+		[IP_CT_DIR_ORIGINAL] = "original",
+		[IP_CT_DIR_REPLY] = "reply",
+		[IP_CT_DIR_MAX] = NULL
+	};
+	struct nf_conn *ct = lua_touserdata(L, 1);
+	int dir = luaL_checkoption(L, 2, NULL, directions);
+	const struct nf_conn_counter *counters;
+
+	luaL_argcheck(L, ct != NULL, 1, "invalid connid");
+
+	if ((counters = kpi_nf_conn_acct_find(ct)) == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "counters not found");
+		return 2;
+	}
+
+	lua_pushinteger(L, atomic64_read(&counters[dir].packets));
+	lua_pushinteger(L, atomic64_read(&counters[dir].bytes));
+
+	return 2;
+}
+
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
@@ -544,6 +641,8 @@ static const luaL_Reg nflua_lib[] = {
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
 	{"hotdrop", nflua_hotdrop},
+	{"findconnid", nflua_findconnid},
+	{"traffic", nflua_traffic},
 	{NULL, NULL}
 };
 
@@ -622,6 +721,27 @@ out:
 	spin_unlock_bh(&xt_lua->lock);
 }
 
+static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
+{
+	struct xt_lua_net *xt_lua = ud;
+	void *nptr = NULL;
+
+	/* osize doesn't represent the object old size if ptr is NULL */
+	osize = ptr != NULL ? osize : 0;
+
+	if (nsize == 0) {
+		xt_lua->alloc -= osize;
+		kfree(ptr);
+	} else if (xt_lua->alloc - osize + nsize > XT_LUA_MEM_LIMIT) {
+		pr_warn_ratelimited("memory limit %d exceeded\n",
+		    XT_LUA_MEM_LIMIT);
+	} else if ((nptr = krealloc(ptr, nsize, GFP_ATOMIC)) != NULL) {
+		xt_lua->alloc += nsize - osize;
+	}
+
+	return nptr;
+}
+
 static int __net_init xt_lua_net_init(struct net *net)
 {
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
@@ -640,11 +760,11 @@ static int __net_init xt_lua_net_init(struct net *net)
 	lua_State *L;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, &cfg);
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
 #elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, THIS_MODULE, &cfg);
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE, &cfg);
 #else
-	sock = netlink_kernel_create(net, NETLINK_USERSOCK, groups, input,
+	sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
 	                             NULL, THIS_MODULE);
 #endif
 	if (sock == NULL)
@@ -653,7 +773,9 @@ static int __net_init xt_lua_net_init(struct net *net)
 	spin_lock_init(&xt_lua->lock);
 
 	spin_lock_bh(&xt_lua->lock);
-	xt_lua->L = L = luaL_newstate();
+	xt_lua->net = net;
+	xt_lua->alloc = 0;
+	xt_lua->L = L = lua_newstate(lua_alloc, xt_lua);
 	if (L == NULL) {
 		spin_unlock_bh(&xt_lua->lock);
 		netlink_kernel_release(sock);
@@ -663,8 +785,15 @@ static int __net_init xt_lua_net_init(struct net *net)
 	luaU_setenv(L, xt_lua, struct xt_lua_net);
 	luaL_openlibs(L);
 
+	luaL_requiref(L, "nf", luaopen_nf, 1);
+	luaL_requiref(L, "timer", luaopen_timer, 1);
 	luaL_requiref(L, "data", luaopen_data, 1);
-	lua_pop(L, 1);
+	lua_pop(L, 3);
+
+	/* fixes an issue where the Lua's GC enters a vicious cycle.
+	 * more info here: https://marc.info/?l=lua-l&m=155024035605499&w=2
+	 */
+	lua_gc(L, LUA_GCSETPAUSE, NFLUA_SETPAUSE);
 
 	luaU_setregval(L, NFLUA_SOCK, sock);
 	spin_unlock_bh(&xt_lua->lock);

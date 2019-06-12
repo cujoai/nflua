@@ -2,7 +2,7 @@
  * (C) 2003 USAGI/WIDE Project, Yasuyuki Kozakai <yasuyuki.kozakai@toshiba.co.jp>
  * (C) 2002-2004 Netfilter Core Team <coreteam@netfilter.org>
  * (C) 2005-2007 Patrick McHardy <kaber@trash.net>
- * (C) 2017-2018 This file was modified by CUJO LLC
+ * (C) 2017-2019 This file was modified by CUJO LLC
  *
  * Based on net/ipv4/ip_forward.c, net/ipv6/ip6_output.c, net/ipv6.h,
  * linux/net.h
@@ -102,7 +102,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 	unsigned int otcplen, hh_len;
 	unsigned char *data;
 	size_t tcplen;
-	int tcphoff;
+	int tcphoff, hook;
 	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
 	struct ipv6hdr *ip6h;
 #define DEFAULT_TOS_VALUE	0x0U
@@ -146,9 +146,14 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb,
 		return -1;
 	}
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
+	hook = xt_hooknum(par);
+#else
+	hook = par->hooknum;
+#endif
+
 	/* Check checksum. */
-	if (csum_ipv6_magic(&oip6h->saddr, &oip6h->daddr, otcplen, IPPROTO_TCP,
-			    skb_checksum(oldskb, tcphoff, otcplen, 0))) {
+	if (nf_ip6_checksum(oldskb, hook, tcphoff, IPPROTO_TCP)) {
 		pr_warn("TCP checksum is invalid\n");
 		return -1;
 	}
