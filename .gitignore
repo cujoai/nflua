@@ -3,6 +3,7 @@
 *.ko
 *.so*
 *.d
+*.o.ur-safe
 .tmp_versions
 .*.cmd
 .*.mk
