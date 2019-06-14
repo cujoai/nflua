@@ -80,9 +80,12 @@ driver.test('timer destroy after callback', function()
 
 	local code = string.format([[
 		local basetimeout, pid, token = %d, %d, %q
-		local t = timer.create(basetimeout, function()
+		local t
+		t = timer.create(basetimeout, function()
+			local ok, err = timer.destroy(t)
+			assert(ok == nil)
+			assert(err == "timer already destroyed")
 			nf.netlink(pid, nil, token)
-			timer.destroy(t)
 		end)
 	]], basetimeout, d:getpid(), token)
 
@@ -103,7 +106,7 @@ driver.test('timer destroy before callback', function()
 		local t = timer.create(basetimeout, function()
 			nf.netlink(pid, nil, 'fail')
 		end)
-		timer.destroy(t)
+		assert(timer.destroy(t))
 		local t = timer.create(basetimeout * 2, function()
 			nf.netlink(pid, nil, token)
 		end)

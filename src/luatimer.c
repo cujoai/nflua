@@ -72,6 +72,7 @@ static void timeout_cb(kpi_timer_list_t l)
 
 	/* check if ltimer_destroy was called for this timer */
 	if (WARN_ON(!luaU_pushudata(ctx->state->L, ctx))) goto cleanup;
+	luaU_unregisterudata(ctx->state->L, ctx);
 
 	lua_getuservalue(ctx->state->L, -1);
 	if (lua_pcall(ctx->state->L, 0, 0, 0) != 0) {
@@ -80,7 +81,6 @@ static void timeout_cb(kpi_timer_list_t l)
 	}
 
 cleanup:
-	luaU_unregisterudata(ctx->state->L, ctx);
 	lua_settop(ctx->state->L, base);
 unlock:
 	spin_unlock(&ctx->state->lock);
@@ -120,15 +120,18 @@ static int ltimer_destroy(lua_State *L)
 {
 	struct nftimer_ctx *ctx = luaL_checkudata(L, 1, NFLUA_TIMER);
 
-	/* the timer callback has already cleaned the context up */
-	if (!luaU_pushudata(L, ctx))
-		return 0;
+	if (!luaU_pushudata(L, ctx)) {
+		lua_pushnil(L);
+		lua_pushstring(L, "timer already destroyed");
+		return 2;
+	}
 
 	luaU_unregisterudata(L, ctx);
 	del_timer(&ctx->timer);
 	state_put(ctx->state);
+	lua_pushboolean(L, true);
 
-	return 0;
+	return 1;
 }
 
 static const luaL_Reg timerlib[] = {
