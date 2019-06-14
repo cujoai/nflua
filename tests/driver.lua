@@ -24,14 +24,17 @@ local util = require'tests.util'
 
 local driver = {}
 
+local rmmodule = 'sudo rmmod nflua'
+local loadmodule = 'sudo insmod ./src/nflua.ko'
+
 function driver.reloadmodule()
-	util.silentexec'sudo rmmod nflua'
-	util.silentexec'sudo insmod ./src/nflua.ko'
+	util.assertexec(rmmodule)
+	util.assertexec(loadmodule)
 end
 
 network.cleanup()
-util.silentexec'sudo rmmod nflua'
-util.silentexec'sudo insmod ./src/nflua.ko'
+util.silentexec(rmmodule)
+util.silentexec(loadmodule)
 
 local function receiveall(s)
 	local ret
