@@ -140,17 +140,9 @@ static const luaL_Reg timerlib[] = {
 	{NULL, NULL}
 };
 
-static const luaL_Reg ltimer_ops[] = {
-	{"__gc", ltimer_destroy},
-	{NULL, NULL}
-};
-
 int luaopen_timer(lua_State *L)
 {
 	luaL_newmetatable(L, NFLUA_TIMER);
-	lua_pushvalue(L, -1);
-	lua_setfield(L, -2, "__index");
-	luaL_setfuncs(L, ltimer_ops, 0);
 	lua_pop(L, 1);
 
 	luaL_newlib(L, timerlib);
