@@ -25,6 +25,7 @@ local timeout = 0.5 -- seconds
 local prefix = 'nflua_'
 local svnet = prefix .. 'svnet'
 local clnet = prefix .. 'clnet'
+local eth0 = prefix .. 'eth0'
 local wan0 = prefix .. 'wan0'
 local lan0 = prefix .. 'lan0'
 local br0 = prefix .. 'br0'
@@ -45,13 +46,13 @@ network.toclient = string.format('%s -i %s -d %s -p tcp', chain, br0, claddr)
 
 local function createnet(netname, addr, iface)
 	util.assertexec('ip netns add %s', netname)
-	util.assertexec('ip link add eth0 netns %s type veth peer name %s',
-		netname, iface)
+	util.assertexec('ip link add %s netns %s type veth peer name %s',
+		eth0, netname, iface)
 
 	util.assertexec('ip link set %s up', iface)
-	util.assertexec('ip -n %s link set eth0 up', netname)
+	util.assertexec('ip -n %s link set %s up', netname, eth0)
 
-	util.assertexec('ip -n %s addr add %s/24 dev eth0', netname, addr)
+	util.assertexec('ip -n %s addr add %s/24 dev %s', netname, addr, eth0)
 	util.assertexec('ip -n %s route add default via %s', netname, addr)
 end
 
