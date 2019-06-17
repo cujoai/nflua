@@ -19,4 +19,5 @@
 dofile'tests/lib.lua'
 dofile'tests/timer.lua'
 dofile'tests/match.lua'
+dofile'tests/target.lua'
 dofile'tests/packet.lua'
