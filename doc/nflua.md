@@ -21,8 +21,7 @@ Index
 - [`nflua.control`](#control--nfluacontrolport)
 - [`nflua.data`](#nfluadataport)
 - [`nflua.datamaxsize`](#nfluadatamaxsize)
-- [`nflua.defaultmaxallocbytes`](#defaultmaxallocbytes)
-- [`nflua.fragsize`](#nfluafragsize)
+- [`nflua.defaultmaxallocbytes`](#nfluadefaultmaxallocbytes)
 - [`nflua.maxstates`](#nfluamaxstates)
 - [`nflua.scriptnamemaxsize`](#nfluascriptnamemaxsize)
 - [`nflua.statenamemaxsize`](#nfluastatenamemaxsize)
@@ -30,16 +29,16 @@ Index
 - [`control:getfd`](#controlgetfd)
 - [`control:getpid`](#controlgetpid)
 - [`control:getstate`](#controlgetstate)
-- [`control:create`](#controlcreatename-intructions--memory-flags)
+- [`control:create`](#controlcreatename--maxalloc)
 - [`control:destroy`](#controldestroystate)
-- [`control:execute`](#controlexecutestate-chunk)
+- [`control:execute`](#controlexecutestate-chunk--scriptname)
 - [`control:list`](#controllist)
 - [`control:receive`](#result--controlreceive)
 - [`data:close`](#dataclose)
 - [`data:getfd`](#datagetfd)
 - [`data:getpid`](#datagetpid)
 - [`data:send`](#datasendstate-buffer)
-- [`data:receive`](#buffer--datareceive)
+- [`data:receive`](#recv-state--datareceivebuffer-offset)
 
 Contents
 --------
@@ -66,10 +65,6 @@ Integer constant that represents the maximum number of bytes transmitted in a si
 ### `nflua.defaultmaxallocbytes`
 
 Integer constant that represents the default maximum number of bytes that each state can allocate.
-
-### `nflua.fragsize`
-
-Integer constant that represents the maximum number of bytes transmitted in a script fragment.
 
 ### `nflua.maxstates`
 
@@ -103,27 +98,25 @@ Returns a string that defines the current state of control socket `control`, as 
 * `"waiting"`: socket shall be used to start receiving a reply.
 * `"receiving"`: socket shall be used to receive the remains of a reply.
 * `"failed"`: socket shall be closed due to faulty communication using the underlying protocol.
+* `"closed"`: socket is closed.
 
-### `control:create(name, instructions [, memory , flags])`
+### `control:create(name [, maxalloc])`
 
 Sends command using socket `control` to NFLua kernel module to create a new Lua state.
 After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
-String `name` is the name of the module and it must be unique.
-Number `instructions` is the maximum number of Lua VM instructions that a Lua state can execute at once; after the interpeter executes this number of instructions, it interrupts the call.
-Number `memory` is the maximum number of bytes that the state can allocate in the kernel.
-String `flags` shall contain the following characters that will define additional configuration options for the state to be created:
-
-- `d`: loads the Lua Standard Debug library to the state (module `debug`).
+String `name` is the name of the module; it must be unique and it should have less than [`nflua.statenamemaxsize`](#nfluastatenamemaxsize) characters.
+Number `maxalloc` is the maximum number of bytes that the state can allocate in the kernel; the default value is defined by [`nflua.defaultmaxallocbytes`](#nfluadefaultmaxallocbytes).
 
 ### `control:destroy(state)`
 
 Sends command using socket `control` to NFLua kernel module to remove a Lua state with name `state`.
 After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
-### `control:execute(state, chunk)`
+### `control:execute(state, chunk [, scriptname])`
 
 Sends command using socket `control` to NFLua kernel module to execute the Lua code in string `chunk` in state with name `state`.
+`scriptname` is a string used to represent the name of the script file in error messages; it must have less than [`nflua.statenamemaxsize`](#nfluastatenamemaxsize) characters.
 After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
 ### `control:list()`
@@ -134,15 +127,14 @@ After sending the command successfully, the code must call [`control:receive`](#
 ### `result = control:receive()`
 
 Receives a command reply using socket `control`.
-The reply of commands sent by operations [`control:create`](#controlcreatename-intructions-memory--flags), [`control:destroy`](#controldestroystate), and [`control:execute`](#controlexecutestate-chunk) return `true` in case of success.
+The reply of commands sent by operations [`control:create`](#controlcreatename--maxalloc), [`control:destroy`](#controldestroystate), and [`control:execute`](#controlexecutestate-chunk--scriptname) return `true` in case of success.
 The reply of commands sent by operation [`control:list`](#controllist) return a sequence of tables with the following structures:
 
 ```lua
 {
-	name = "MyNFLua", -- unique name of the state.
-	maxruns = 1000,   -- maximum of 1K opcodes executed by callback.
-	maxalloc = 65536, -- maximum of 64K bytes allocated.
-	flags = "d",      -- optional configuration flags of the state.
+	name = "MyNFLua",  -- unique name of the state.
+	maxalloc = 65536,  -- maximum of 64K bytes allocated.
+	curralloc = 12345, -- number of bytes currently allocated.
 }
 ```
 
