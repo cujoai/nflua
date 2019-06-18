@@ -123,9 +123,8 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb, int hooknum,
 
 	skb_reserve(nskb, hh_len + dst->header_len);
 
-	skb_put(nskb, sizeof(struct ipv6hdr));
 	skb_reset_network_header(nskb);
-	ip6h = ipv6_hdr(nskb);
+	ip6h = (struct ipv6hdr *)skb_put(nskb, sizeof(struct ipv6hdr));
 	kpi_ip6_flow_hdr(ip6h, tclass, 0);
 	ip6h->hop_limit = ip6_dst_hoplimit(dst);
 	ip6h->nexthdr = IPPROTO_TCP;
