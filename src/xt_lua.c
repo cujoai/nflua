@@ -34,11 +34,9 @@
 #include "kpi_compat.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Pedro Caldas Tammela <pctammela@getcujo.com>");
-MODULE_AUTHOR("Lourival Vieira Neto <lourival.neto@getcujo.com>");
-MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
+MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
 
-MODULE_DESCRIPTION("Netfilter Lua module");
+MODULE_DESCRIPTION("Xtables: Lua packet match and target");
 
 luaU_id nflua_ctx;
 luaU_id nflua_sock;
