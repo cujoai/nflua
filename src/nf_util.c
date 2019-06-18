@@ -132,7 +132,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb, int hooknum,
 	ip6h->saddr = oip6h->daddr;
 	ip6h->daddr = oip6h->saddr;
 
-	skb_reset_transport_header(nskb);
+	skb_set_transport_header(nskb, sizeof(struct ipv6hdr));
 	tcph = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	/* Truncate to length */
 	tcph->doff = sizeof(struct tcphdr)/4;
@@ -225,7 +225,7 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	memcpy(nip6h, ip6h, sizeof(struct ipv6hdr));
 	nip6h->nexthdr = IPPROTO_TCP;
 
-	skb_reset_transport_header(nskb);
+	skb_set_transport_header(nskb, sizeof(struct ipv6hdr));
 	ntcphp = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
 	ntcphp->doff = sizeof(struct tcphdr) / 4;
@@ -357,7 +357,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hooknum,
 	niph->saddr	= oiph->daddr;
 	niph->daddr	= oiph->saddr;
 
-	skb_reset_transport_header(nskb);
+	skb_set_transport_header(nskb, sizeof(struct iphdr));
 	tcph = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	memset(tcph, 0, sizeof(*tcph));
 	tcph->source	= oth->dest;
@@ -454,7 +454,7 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	niph->ihl = sizeof(struct iphdr) / 4;
 	niph->frag_off = htons(IP_DF);
 
-	skb_reset_transport_header(nskb);
+	skb_set_transport_header(nskb, sizeof(struct iphdr));
 	ntcphp = (struct tcphdr *)skb_put(nskb, sizeof(struct tcphdr));
 	memcpy(ntcphp, &tcph, sizeof(struct tcphdr));
 	ntcphp->doff = sizeof(struct tcphdr) / 4;
