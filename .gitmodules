@@ -6,10 +6,6 @@
 	path = deps/lunatik
 	url = https://github.com/cujoai/lunatik.git
 	branch = master
-[submodule "deps/luadata"]
-	path = deps/luadata
-	url = https://github.com/cujoai/luadata.git
-	branch = master
 [submodule "deps/luabase64"]
 	path = deps/luabase64
 	url = https://github.com/cujoai/luabase64.git
