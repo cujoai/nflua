@@ -4,7 +4,7 @@
 	branch = master
 [submodule "lib/lunatik"]
 	path = lib/lunatik
-	url = https://github.com/getCUJO/lunatik.git
+	url = https://github.com/getCUJO/ports-lunatik.git
 	branch = master
 [submodule "lib/luadata"]
 	path = lib/luadata
