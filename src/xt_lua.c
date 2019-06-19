@@ -618,7 +618,7 @@ static int nflua_traffic(lua_State *L)
 	};
 	struct nf_conn *ct = lua_touserdata(L, 1);
 	int dir = luaL_checkoption(L, 2, NULL, directions);
-	const struct nf_conn_counter *counters;
+	struct nf_conn_counter *counters;
 
 	luaL_argcheck(L, ct != NULL, 1, "invalid connid");
 
