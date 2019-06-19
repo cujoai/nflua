@@ -25,9 +25,7 @@ local basetimeout = 100 -- ms
 local errlimit = 50 -- ms
 
 driver.test('timer create single', function()
-	local c = assert(nflua.control())
 	local d = assert(nflua.data())
-
 	local code = string.format([[
 		local basetimeout, pid = %d, %d
 		local _, old = os.time()
@@ -37,8 +35,7 @@ driver.test('timer create single', function()
 		end)
 	]], basetimeout, d:getpid())
 
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', code)
+	driver.setup('st', code)
 
 	local elapsed = tonumber(tostring(driver.datareceive(d))) / 1000000
 	assert(elapsed >= basetimeout)
@@ -46,9 +43,7 @@ driver.test('timer create single', function()
 end)
 
 driver.test('timer create multiple', function()
-	local c = assert(nflua.control())
 	local d = assert(nflua.data())
-
 	local n = 3
 	local tokens = {}
 	for i = 1, n do
@@ -64,8 +59,7 @@ driver.test('timer create multiple', function()
 		end
 	]], basetimeout, d:getpid(), n, table.concat(tokens, '","'))
 
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', code)
+	driver.setup('st', code)
 
 	for i = n, 1, -1 do
 		assert(tostring(driver.datareceive(d)) == tokens[i])
@@ -73,32 +67,30 @@ driver.test('timer create multiple', function()
 end)
 
 driver.test('timer destroy then close state', function()
-	local c = assert(nflua.control())
 	local token = util.gentoken()
-
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', string.format([[
+	local code = string.format([[
 		local timeout, token = %d, %q
 		local t = timer.create(timeout, function() end)
 		local ok = timer.destroy(t)
 		print(token .. tostring(ok))
-	]], basetimeout, token))
+	]], basetimeout, token)
+
+	local c = driver.setup('st', code)
 
 	driver.run(c, 'destroy', 'st')
 	driver.matchdmesg(2, token .. 'true')
 end)
 
 driver.test('timer destroy then close module', function()
-	local c = assert(nflua.control())
 	local token = util.gentoken()
-
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', string.format([[
+	local code = string.format([[
 		local timeout, token = %d, %q
 		local t = timer.create(timeout, function() end)
 		local ok = timer.destroy(t)
 		print(token .. tostring(ok))
-	]], basetimeout, token))
+	]], basetimeout, token)
+
+	local c = driver.setup('st', code)
 
 	c:close()
 	driver.reloadmodule()
@@ -106,11 +98,8 @@ driver.test('timer destroy then close module', function()
 end)
 
 driver.test('timer destroy after callback', function()
-	local c = assert(nflua.control())
 	local d = assert(nflua.data())
-
 	local token = util.gentoken(32)
-
 	local code = string.format([[
 		local basetimeout, pid, token = %d, %d, %q
 		local t
@@ -122,18 +111,14 @@ driver.test('timer destroy after callback', function()
 		end)
 	]], basetimeout, d:getpid(), token)
 
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', code)
+	driver.setup('st', code)
 
 	assert(tostring(driver.datareceive(d)) == token)
 end)
 
 driver.test('timer destroy before callback', function()
-	local c = assert(nflua.control())
 	local d = assert(nflua.data())
-
 	local token = util.gentoken(32)
-
 	local code = string.format([[
 		local basetimeout, pid, token = %d, %d, %q
 		local t = timer.create(basetimeout, function()
@@ -145,20 +130,18 @@ driver.test('timer destroy before callback', function()
 		end)
 	]], basetimeout, d:getpid(), token)
 
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', code)
+	driver.setup('st', code)
 
 	assert(tostring(driver.datareceive(d)) == token)
 end)
 
 driver.test('timer close state fail', function()
-	local c = assert(nflua.control())
-
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', string.format([[
+	local code = string.format([[
 		local timeout = %d
 		timer.create(timeout, function() end)
-	]], basetimeout))
+	]], basetimeout)
+
+	local c = driver.setup('st', code)
 
 	driver.failrun(c, 'could not destroy lua state', 'destroy', 'st')
 
@@ -167,13 +150,12 @@ driver.test('timer close state fail', function()
 end)
 
 driver.test('timer close module fail', function()
-	local c = assert(nflua.control())
-
-	driver.run(c, 'create', 'st', 256 * 1024)
-	driver.run(c, 'execute', 'st', string.format([[
+	local code = string.format([[
 		local timeout = %d
 		timer.create(timeout, function() end)
-	]], basetimeout))
+	]], basetimeout)
+
+	local c = driver.setup('st', code)
 
 	c:close()
 
