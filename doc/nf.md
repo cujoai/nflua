@@ -187,3 +187,10 @@ The default value for `pos` is 1.
 |             ||      |       |           |
 +---------------------+-------+-----------+
 ```
+
+### `packet:copybytes(m [, i [, j [, o]]])`
+
+Copies as much of the contents of packet's payload from position `i` until `j` to memory `m` from position `o` of `m`;
+i, j and o can be negative.
+
+These indices are corrected following the same rules of function [`memory.find`](https://github.com/cujoai/lua-memory/blob/master/doc/manual.md#memoryfind-m-s--i--j--o).

@@ -33,7 +33,8 @@ local methods = {
 	'frame',
 	'send',
 	'tcpreply',
-	'unpack'
+	'unpack',
+	'copybytes'
 }
 
 local function afterreturn(fname)
@@ -286,4 +287,52 @@ driver.test('packet tcpreply', function ()
 	driver.setup('st', code)
 	util.assertexec(matchrule)
 	network.asserttraffic(token)
+end)
+
+driver.test('packet copybytes to memory', function ()
+	local token = util.gentoken()
+	local code = string.format([[
+		function f(pkt)
+			local len = #pkt
+			local mem = memory.create(len)
+			pkt:copybytes(mem)
+			if memory.unpack(mem, 'c' .. len) == pkt:unpack('c' .. len) then
+				print(%q)
+			end
+			return false
+		end
+	]], token)
+	driver.setup('st', code)
+	util.assertexec(matchrule)
+	network.asserttraffic()
+	driver.matchdmesg(2, token)
+end)
+
+driver.test('packet copybytes invalid args', function ()
+	local code = [[
+		function f(pkt)
+			local ok, err = pcall(pkt.copybytes, pkt, %s)
+			print(err)
+			return false
+		end
+	]]
+	local oobmsg = 'index out of bounds'
+	local cases = {
+		{args = 'memory.create()', msg = oobmsg},
+		{args = 'memory.create(1), -#pkt - 1', msg = oobmsg},
+		{args = 'memory.create(1), 1, -#pkt - 1', msg = oobmsg},
+		{args = 'memory.create(1), 1, 1, 2', msg = oobmsg},
+		{args = 'memory.create(1), 1, 1, -2', msg = oobmsg},
+		{args = 'memory.create(1), #pkt + 1', msg = oobmsg},
+		{args = 'memory.create(1), 1, #pkt + 1', msg = oobmsg},
+		{args = 'memory.create(1), -1, -2', msg = oobmsg},
+		{args = 'memory.create(1), 1, 3', msg = 'slice too big'}
+	}
+	local c = driver.setup('st', nil, true)
+	util.assertexec(matchrule)
+	for _, case in ipairs(cases) do
+		driver.run(c, 'execute', 'st', string.format(code, case.args))
+		network.asserttraffic()
+		driver.matchdmesg(3, case.msg)
+	end
 end)

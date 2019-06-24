@@ -194,6 +194,33 @@ static int luapacket_connid(lua_State *L)
 	return 1;
 }
 
+/* lua/strlib.c */
+static lua_Integer posrelat(lua_Integer pos, size_t len);
+
+static int luapacket_copybytes(lua_State *L)
+{
+	size_t mlen;
+	struct luapacket *packet = getpacket(L);
+	struct sk_buff *skb = packet->skb;
+	char *mem = luamem_tomemory(L, 2, &mlen);
+	size_t i = (size_t)posrelat(luaL_optinteger(L, 3, 1), skb->len);
+	size_t j = (size_t)posrelat(luaL_optinteger(L, 4, -1), skb->len);
+	size_t o = (size_t)posrelat(luaL_optinteger(L, 5, 1), mlen);
+	size_t n;
+
+	luaL_argcheck(L, 1 <= i && i <= skb->len && i <= j, 3, "index out of bounds");
+	luaL_argcheck(L, 1 <= j && j <= skb->len, 4, "index out of bounds");
+	luaL_argcheck(L, 1 <= o && o <= mlen, 5, "index out of bounds");
+
+	n = j - i + 1;
+	if (n > mlen)
+		return luaL_error(L, "slice too big for memory");
+
+	skb_copy_bits(skb, i - 1, mem + (o - 1), n);
+
+	return 0;
+}
+
 static int luapacket_gc(lua_State *L)
 {
 	struct luapacket *packet = luaL_checkudata(L, 1, LUAPACKET);
@@ -245,6 +272,7 @@ static const luaL_Reg luapacket_mt[] = {
 	{"tcpreply", luapacket_tcpreply},
 	{"send", luapacket_send},
 	{"connid", luapacket_connid},
+	{"copybytes", luapacket_copybytes},
 	{"__gc", luapacket_gc},
 	{"__tostring", luapacket_tostring},
 	{"__len", luapacket_len},
