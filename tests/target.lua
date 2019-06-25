@@ -77,7 +77,7 @@ end)
 driver.test('target veredict drop', function()
 	driver.setup('st', 'function f() return \'drop\' end')
 	util.assertexec(rule)
-	network.assertnotraffic()
+	network.asserttraffic''
 end)
 
 driver.test('target veredict stolen', function()
