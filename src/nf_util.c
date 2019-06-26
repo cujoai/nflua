@@ -33,7 +33,7 @@
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
 static int tcp_ipv6_reply(struct sk_buff *oldskb, int hooknum,
-			  unsigned char *msg, size_t len)
+			  const unsigned char *msg, size_t len)
 {
 	struct net *net = dev_net(skb_dst(oldskb)->dev);
 	struct sk_buff *nskb;
@@ -168,7 +168,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb, int hooknum,
 }
 
 static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
-		unsigned char *payload, size_t len)
+		const unsigned char *payload, size_t len)
 {
 	struct tcphdr tcph, *ntcphp;
 	struct ipv6hdr *nip6h, *ip6h = ipv6_hdr(skb);
@@ -295,7 +295,7 @@ static int ipv6_forward_finish(struct sk_buff *skb)
 #endif /* IS_ENABLED(CONFIG_IPV6) */
 
 static int tcp_ipv4_reply(struct sk_buff *oldskb, int hooknum,
-			  unsigned char *msg, size_t len)
+			  const unsigned char *msg, size_t len)
 {
 	struct net *net = dev_net(skb_dst(oldskb)->dev);
 	struct sk_buff *nskb;
@@ -404,7 +404,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, int hooknum,
 	return -1;
 }
 
-int tcp_reply(struct sk_buff *oldskb, int hooknum, unsigned char *msg,
+int tcp_reply(struct sk_buff *oldskb, int hooknum, const unsigned char *msg,
 		size_t len)
 {
 	if (IS_ENABLED(CONFIG_IPV6) && oldskb->protocol == htons(ETH_P_IPV6))
@@ -413,7 +413,7 @@ int tcp_reply(struct sk_buff *oldskb, int hooknum, unsigned char *msg,
 }
 
 static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
-		unsigned char *payload, size_t len)
+		const unsigned char *payload, size_t len)
 {
 	struct tcphdr tcph, *ntcphp;
 	struct iphdr *niph;
@@ -502,7 +502,7 @@ static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 }
 
 struct sk_buff *tcp_payload(struct sk_buff *skb,
-                            unsigned char *payload, size_t len)
+                            const unsigned char *payload, size_t len)
 {
 	if (IS_ENABLED(CONFIG_IPV6) && skb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_payload(skb, payload, len);

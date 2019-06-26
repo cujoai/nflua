@@ -23,8 +23,8 @@
 #include <linux/skbuff.h>
 #include <linux/netfilter/x_tables.h>
 
-int tcp_reply(struct sk_buff *, int, unsigned char *, size_t);
-struct sk_buff *tcp_payload(struct sk_buff *, unsigned char *, size_t);
+int tcp_reply(struct sk_buff *, int, const unsigned char *, size_t);
+struct sk_buff *tcp_payload(struct sk_buff *, const unsigned char *, size_t);
 int tcp_send(struct sk_buff *);
 int tcp_payload_length(const struct sk_buff *);
 int route_me_harder(struct sk_buff *);
