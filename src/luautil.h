@@ -66,6 +66,13 @@ static inline void *luaU_getregval(lua_State *L, luaU_id id)
 
 #define luaU_getenv(L, st)	(*((st **)lua_getextraspace(L)))
 
+static inline int luaU_pusherr(lua_State *L, const char *err)
+{
+	lua_pushnil(L);
+	lua_pushstring(L, err);
+	return 2;
+}
+
 #define luaU_dostring(L, b, s, n) \
 	(luaL_loadbufferx(L, b, s, n, "t") || luaU_pcall(L, 0, 0))
 
