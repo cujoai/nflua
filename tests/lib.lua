@@ -274,7 +274,7 @@ driver.test('data.send', function()
 	driver.run(c, 'create', 'st')
 	driver.run(c, 'execute', 'st', [[
 		function __receive_callback(pid, data)
-			nf.netlink(pid, nil, data)
+			netlink.send(pid, nil, data)
 		end
 	]])
 
@@ -306,7 +306,7 @@ driver.test('data.receive', function()
 	assert(err == argerror(2, 'memory expected, got number'))
 
 	local code = string.format([[
-		nf.netlink(%d, nil, string.rep('x', 65000))
+		netlink.send(%d, nil, string.rep('x', 65000))
 	]], s:getpid())
 	driver.failrun(c, 'could not execute / load data', 'execute', 'st', code)
 end)

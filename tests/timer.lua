@@ -31,7 +31,7 @@ driver.test('timer create single', function()
 		local _, old = os.time()
 		timer.create(basetimeout, function()
 			local _, now = os.time()
-			nf.netlink(pid, nil, tostring(now - old))
+			netlink.send(pid, nil, tostring(now - old))
 		end)
 	]], basetimeout, d:getpid())
 
@@ -54,7 +54,7 @@ driver.test('timer create multiple', function()
 		local basetimeout, pid, n, tokens = %d, %d, %d, {"%s"}
 		for i = 1, n do
 			timer.create((n - i) * basetimeout, function()
-				nf.netlink(pid, nil, tokens[i])
+				netlink.send(pid, nil, tokens[i])
 			end)
 		end
 	]], basetimeout, d:getpid(), n, table.concat(tokens, '","'))
@@ -107,7 +107,7 @@ driver.test('timer destroy after callback', function()
 			local ok, err = timer.destroy(t)
 			assert(ok == nil)
 			assert(err == "timer already destroyed")
-			nf.netlink(pid, nil, token)
+			netlink.send(pid, nil, token)
 		end)
 	]], basetimeout, d:getpid(), token)
 
@@ -122,11 +122,11 @@ driver.test('timer destroy before callback', function()
 	local code = string.format([[
 		local basetimeout, pid, token = %d, %d, %q
 		local t = timer.create(basetimeout, function()
-			nf.netlink(pid, nil, 'fail')
+			netlink.send(pid, nil, 'fail')
 		end)
 		assert(timer.destroy(t))
 		local t = timer.create(basetimeout * 2, function()
-			nf.netlink(pid, nil, token)
+			netlink.send(pid, nil, token)
 		end)
 	]], basetimeout, d:getpid(), token)
 
