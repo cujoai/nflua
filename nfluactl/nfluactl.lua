@@ -17,7 +17,7 @@
 --
 
 local nflua = require'nflua'
-local data = require'data'
+local memory = require'memory'
 
 local usage = string.format([[
 usage: lua %s <command> [<args>]
@@ -79,7 +79,7 @@ elseif arg[1] == 'execute' then
 elseif arg[1] == 'send' then
 	local s = ccall(nflua.data, tonumber(arg[3]))
 	local state = arg[2]
-	local buffer = data.new(io.read'a')
+	local buffer = memory.create(io.read'a')
 	ccall(s.send, s, state, buffer)
 	s:close()
 elseif arg[1] == 'receive' then
