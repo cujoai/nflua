@@ -82,8 +82,8 @@ end)
 
 driver.test('target veredict stolen', function()
 	driver.setup('st', [[
-		function f()
-			nf.getpacket():send()
+		function f(pkt)
+			timer.create(1, function() pkt:send() end)
 			return 'stolen'
 		end
 	]])
@@ -111,10 +111,10 @@ end)
 driver.test('target veredict repeat-steal', function()
 	driver.setup('st', [[
 		cnt = 0
-		function f()
+		function f(pkt)
 			cnt = cnt + 1
 			if cnt > 1 then
-				nf.getpacket():send()
+				timer.create(1, function() pkt:send() end)
 				return 'stolen'
 			end
 			return 'repeat'

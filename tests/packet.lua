@@ -25,150 +25,241 @@ local targetrule = 'iptables -A ' .. network.toclient ..
 local matchrule = 'iptables -A ' .. network.toserver ..
 	' -m lua --tcp-payload --state st --function f -j DROP'
 
-driver.test('packet close', function()
-	local code = [[
-		function f()
-			local packet = nf.getpacket()
-			packet:close()
-			return 'stolen'
-		end
-	]]
-	driver.setup('st', code)
-	util.assertexec(targetrule)
-	network.asserttraffic('')
-end)
+local timeout = 10 -- ms
 
-driver.test('packet close then send', function()
+local methods = {
+	'close',
+	'connid',
+	'frame',
+	'payload',
+	'send',
+	'tcpreply',
+}
+
+local function afterreturn(fname)
 	local code = string.format([[
-		function f()
-			local packet = nf.getpacket()
-			packet:close()
-			packet:send(packet)
+		local timeout, fname = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				pkt[fname](pkt)
+			end)
+			return 'continue'
+		end
+	]], timeout, fname)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(3, 'closed packet')
+end
+
+for _, f in ipairs(methods) do
+	driver.test('packet not stolen then ' .. f, afterreturn, f)
+end
+
+driver.test('packet close', function()
+	local token = util.gentoken()
+	local code = string.format([[
+		local timeout, token = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				local ok = pkt:close()
+				print(token .. tostring(ok))
+			end)
 			return 'stolen'
 		end
-	]], fname)
+	]], timeout, token)
 	driver.setup('st', code)
 	util.assertexec(targetrule)
 	network.asserttraffic('')
-	driver.matchdmesg(3, 'closed packet')
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(2, token .. 'true')
 end)
 
-driver.test('packet send', function()
+driver.test('packet close before stolen', function()
 	local code = [[
-		function f()
-			nf.getpacket():send()
+		function f(pkt)
+			pkt:close()
 			return 'stolen'
 		end
 	]]
 	driver.setup('st', code)
 	util.assertexec(targetrule)
 	network.asserttraffic()
+	driver.matchdmesg(3, 'packet must be stolen')
+end)
+
+driver.test('packet close not stolen', function()
+	local code = string.format([[
+		local timeout = %d
+		function f(pkt)
+			timer.create(timeout, function()
+				pkt:close()
+			end)
+			return 'continue'
+		end
+	]], timeout)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(1, 'closed packet')
+end)
+
+local function afterclose(fname)
+	local code = string.format([[
+		local timeout, fname = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				pkt:close()
+				pkt[fname](pkt)
+			end)
+			return 'stolen'
+		end
+	]], timeout, fname)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic('')
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(3, 'closed packet')
+end
+
+for _, f in ipairs(methods) do
+	driver.test('packet close then ' .. f, afterclose, f)
+end
+
+driver.test('packet frame', function()
+	local token = util.gentoken()
+	local code = string.format([[
+		local token = %q
+		function f(pkt)
+			local mac = util.mac(pkt:frame())
+			print(token .. util.tomac(mac.src))
+			return 'continue'
+		end
+	]], token)
+	driver.setup('st', code, true)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	driver.matchdmesg(2, token .. network.svmac())
+end)
+
+driver.test('packet payload', function()
+	local code = [[
+		function f(pkt)
+			local ip, tcp, data = util.iptcp(pkt:payload())
+			print(util.toip(ip.src) .. tcp.sport .. data)
+			return 'continue'
+		end
+	]]
+	driver.setup('st', code, true)
+	util.assertexec(targetrule)
+	local token = util.gentoken()
+	network.asserttraffic(token, token)
+	driver.matchdmesg(3, network.svaddr .. network.svport .. token)
+end)
+
+driver.test('packet mem unref', function()
+	local token = util.gentoken()
+	local code = string.format([[
+		local timeout, token = %d, %q
+		function f(pkt)
+			local frame, payload = pkt:frame(), pkt:payload()
+			timer.create(timeout, function()
+				print(token .. #frame .. #payload)
+			end)
+			return 'continue'
+		end
+	]], timeout, token)
+	driver.setup('st', code, true)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(2, token .. 0 .. 0)
+end)
+
+driver.test('packet send', function()
+	local token = util.gentoken()
+	local code = string.format([[
+		local timeout, token = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				local ok = pkt:send()
+				print(token .. tostring(ok))
+			end)
+			return 'stolen'
+		end
+	]], timeout, token)
+	driver.setup('st', code)
+	util.assertexec(targetrule)
+	network.asserttraffic()
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(2, token .. 'true')
 end)
 
 driver.test('packet send payload', function()
 	local token = util.gentoken()
 	local code = string.format([[
-		function f()
-			nf.getpacket():send(%q .. '\n')
+		local timeout, token = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				local ok = pkt:send(token .. '\n')
+				print(token .. tostring(ok))
+			end)
 			return 'stolen'
 		end
-	]], token)
+	]], timeout, token)
 	driver.setup('st', code)
 	util.assertexec(targetrule)
 	network.asserttraffic(token)
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(2, token .. 'true')
 end)
 
-driver.test('packet send timer', function()
+driver.test('packet send before stolen', function()
 	local code = [[
-		function f()
-			local packet = nf.getpacket()
-			timer.create(1, function()
-				packet:send()
-			end)
+		function f(pkt)
+			pkt:send()
 			return 'stolen'
 		end
 	]]
 	driver.setup('st', code)
 	util.assertexec(targetrule)
 	network.asserttraffic()
+	driver.matchdmesg(3, 'packet must be stolen')
 end)
 
-driver.test('packet send not stolen', function()
-	local code = [[
-		function f()
-			local packet = nf.getpacket()
-			timer.create(1, function()
-				packet:send()
-			end)
-			return 'drop'
-		end
-	]]
-	driver.setup('st', code)
-	util.assertexec(targetrule)
-	network.asserttraffic()
-end)
-
-driver.test('packet send twice', function()
-	local code = [[
-		function f()
-			local packet = nf.getpacket()
-			packet:send()
-			packet:send()
-			return 'stolen'
-		end
-	]]
-	driver.setup('st', code)
-	util.assertexec(targetrule)
-	network.asserttraffic()
-	driver.matchdmesg(3, 'closed packet')
-end)
-
-driver.test('packet send match', function ()
-	local token = util.gentoken()
+local function aftersend(fname)
 	local code = string.format([[
-		function f()
-			nf.getpacket():send()
-			return true
+		local timeout, fname = %d, %q
+		function f(pkt)
+			timer.create(timeout, function()
+				pkt:send()
+				pkt[fname](pkt)
+			end)
+			return 'stolen'
 		end
-	]], token)
+	]], timeout, fname)
 	driver.setup('st', code)
-	util.assertexec(matchrule)
+	util.assertexec(targetrule)
 	network.asserttraffic()
-	driver.matchdmesg(3, 'not on target context')
-end)
+	util.assertexec('sleep %f', timeout / 1000)
+	driver.matchdmesg(3, 'closed packet')
+end
+
+for _, f in ipairs(methods) do
+	driver.test('packet send then ' .. f, aftersend, f)
+end
 
 driver.test('packet tcpreply', function ()
 	local token = util.gentoken()
 	local code = string.format([[
-		function f()
-			nf.reply('tcp', %q .. '\n')
+		function f(pkt)
+			pkt:tcpreply(%q .. '\n')
 			return true
 		end
 	]], token)
 	driver.setup('st', code)
 	util.assertexec(matchrule)
 	network.asserttraffic(token)
-end)
-
-driver.test('packet contents', function ()
-	local token = util.gentoken()
-	local code = string.format([[
-		local token, svmac, svaddr, svport = %q, %q, %q, %d
-
-		function f(frame, payload)
-			local mac = util.mac(frame)
-			assert(util.tomac(mac.dst) == svmac)
-
-			local ip, tcp, data = util.iptcp(payload)
-			assert(ip.version == 4)
-			assert(util.toip(ip.dst) == svaddr)
-			assert(tcp.dport == svport)
-			assert(token .. '\n' == tostring(data))
-
-			return true
-		end
-	]], token, network.svmac(), network.svaddr, network.svport)
-	driver.setup('st', code, true)
-	util.assertexec(matchrule)
-	network.asserttraffic('', token)
 end)

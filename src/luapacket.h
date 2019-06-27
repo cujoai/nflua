@@ -16,25 +16,13 @@
  * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
  */
 
-#ifndef _XT_LUA_H
-#define _XT_LUA_H
+#ifndef _LUAPACKET_H
+#define _LUAPACKET_H
 
-#include "xt_lua_common.h"
+struct lua_State;
 
-#define XT_LUA_HASH_BUCKETS (32)
+void luapacket_new(lua_State *L, struct sk_buff *skb, int hooknum);
+void luapacket_stolen(lua_State *L, int arg);
+void luapacket_unref(lua_State *L, int arg);
 
-struct sock;
-struct xt_lua_net {
-	struct sock *sock;
-	spinlock_t client_lock;
-	spinlock_t state_lock;
-	spinlock_t rfcnt_lock;
-	atomic_t state_count;
-	struct hlist_head client_table[XT_LUA_HASH_BUCKETS];
-	struct hlist_head state_table[XT_LUA_HASH_BUCKETS];
-};
-
-struct net;
-struct xt_lua_net *xt_lua_pernet(struct net *net);
-
-#endif
+#endif /* _LUAPACKET_H */

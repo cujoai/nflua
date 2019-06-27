@@ -25,13 +25,14 @@
 #include <net/netns/generic.h>
 
 #include <lua.h>
-#include <lmemlib.h>
 
 #include "xt_lua.h"
 #include "nf_util.h"
 #include "netlink.h"
 #include "states.h"
 #include "kpi_compat.h"
+#include "luapacket.h"
+#include "luautil.h"
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
@@ -71,35 +72,34 @@ static int nflua_mt_checkentry(const struct xt_mtchk_param *par)
 	return 0;
 }
 
+enum mode {
+	NFLUA_MATCH,
+	NFLUA_TARGET
+};
+
 static int nflua_docall(lua_State *L)
 {
-	struct nflua_ctx *ctx = lua_touserdata(L, 1);
-	struct sk_buff *skb = ctx->skb;
+	const char *func = lua_touserdata(L, 1);
+	struct sk_buff *skb = lua_touserdata(L, 2);
+	int hooknum = lua_tointeger(L, 3);
+	int mode = lua_tointeger(L, 4);
 	int error;
 
-	luaU_setregval(L, nflua_ctx, ctx);
+	lua_settop(L, 0);
 
-	luamem_newref(L);
-	luamem_setref(L, -1, skb_mac_header(skb), kpi_skb_mac_header_len(skb), NULL);
+	luapacket_new(L, skb, hooknum);
 
-	luamem_newref(L);
-	luamem_setref(L, -1, skb->data, skb->len, NULL);
+	if (lua_getglobal(L, func) != LUA_TFUNCTION)
+		return luaL_error(L, "couldn't find function: %s\n", func);
 
-	if (lua_getglobal(L, ctx->mtinfo->func) != LUA_TFUNCTION)
-		return luaL_error(L, "couldn't find function: %s\n",
-		                  ctx->mtinfo->func);
+	lua_pushvalue(L, 1);
+	error = lua_pcall(L, 1, 1, 0);
 
-	lua_pushvalue(L, 2);
-	lua_pushvalue(L, 3);
-
-	error = lua_pcall(L, 2, 1, 0);
-
-	luamem_setref(L, 2, NULL, 0, NULL);
-	luamem_setref(L, 3, NULL, 0, NULL);
-
-	luaU_setregval(L, nflua_ctx, NULL);
-	if (ctx->lskb)
-		luaU_unregisterudata(L, ctx->lskb);
+	if (mode == NFLUA_TARGET && lua_isstring(L, -1) &&
+	    strcmp(lua_tostring(L, -1), "stolen") == 0)
+		luapacket_stolen(L, 1);
+	else
+		luapacket_unref(L, 1);
 
 	if (error)
 		return lua_error(L);
@@ -139,8 +139,6 @@ static union call_result nflua_call(struct sk_buff *skb,
     struct xt_action_param *par, int mode)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
-	struct nflua_ctx ctx = {.skb = skb, .hooknum = kpi_xt_hooknum(par),
-		.mtinfo = info, .mode = mode, .lskb = NULL};
 	lua_State *L = info->state->L;
 	union call_result r;
 	int base;
@@ -167,9 +165,11 @@ static union call_result nflua_call(struct sk_buff *skb,
 
 	base = lua_gettop(L);
 	lua_pushcfunction(L, nflua_docall);
-	lua_pushlightuserdata(L, &ctx);
-
-	if (luaU_pcall(L, 1, 1)) {
+	lua_pushlightuserdata(L, (void *)info->func);
+	lua_pushlightuserdata(L, skb);
+	lua_pushinteger(L, kpi_xt_hooknum(par));
+	lua_pushinteger(L, mode);
+	if (luaU_pcall(L, 4, 1)) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		goto cleanup;
 	}
@@ -191,13 +191,6 @@ static union call_result nflua_call(struct sk_buff *skb,
 	}
 
 cleanup:
-	if (mode == NFLUA_TARGET) {
-		if (ctx.lskb)
-			r.tg = NF_STOLEN;
-		else if (r.tg == NF_STOLEN)
-			r.tg = XT_CONTINUE;
-	}
-
 	lua_settop(L, base);
 unlock:
 	spin_unlock(&info->state->lock);

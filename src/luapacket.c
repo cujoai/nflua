@@ -19,295 +19,244 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/inet.h>
 #include <linux/export.h>
-#include <net/netfilter/nf_conntrack.h>
-#include <net/netfilter/nf_conntrack_core.h>
-#include <net/netfilter/nf_conntrack_zones.h>
 
 #include <lua.h>
 #include <lauxlib.h>
-#include <lualib.h>
 
 #include <lmemlib.h>
 
-#include "luautil.h"
-#include "xt_lua.h"
-#include "netlink.h"
-#include "states.h"
-#include "nf_util.h"
 #include "kpi_compat.h"
+#include "luapacket.h"
+#include "luautil.h"
+#include "nf_util.h"
+#include "states.h"
+#include "xt_lua.h"
 
-static int nflua_reply(lua_State *L)
+struct luapacket {
+	struct sk_buff *skb;
+	int hooknum;
+	void *frame;
+	void *payload;
+	bool stolen;
+};
+
+#define LUAPACKET "luapacket"
+
+static void makememref(lua_State *L, void **ref, void *data, size_t len)
 {
-	size_t len;
-	unsigned char *type;
-	unsigned char *msg;
-	struct nflua_ctx *ctx;
-
-	ctx = luaU_getregval(L, nflua_ctx);
-	if (ctx == NULL)
-		goto error;
-
-	type = (unsigned char *)luaL_checkstring(L, 1);
-	msg = (unsigned char *)luaL_checklstring(L, 2, &len);
-
-	switch (type[0]) {
-	case 't':
-		if (tcp_reply(ctx->skb, ctx->hooknum, msg, len) != 0)
-			goto error;
-		break;
-	default:
-		goto error;
+	if (*ref != NULL) {
+		luaU_pushudata(L, *ref);
+		return;
 	}
-
-	return 0;
-error:
-	return luaL_error(L, "couldn't reply a packet");
+	luamem_newref(L);
+	luamem_setref(L, -1, data, len, NULL);
+	*ref = lua_touserdata(L, -1);
+	luaU_registerudata(L, -1);
 }
 
-static int nflua_netlink(lua_State *L)
+static void unrefmem(lua_State *L, void *ref)
 {
-	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
-	int pid = luaL_checkinteger(L, 1);
-	int group = luaL_optinteger(L, 2, 0);
-	const char *payload;
-	size_t size;
-	int err;
+	if (ref == NULL)
+		return;
 
-	if (s == NULL)
-		return luaL_error(L, "invalid nflua_state");
+	luaU_pushudata(L, ref);
+	luamem_setref(L, -1, NULL, 0, NULL);
+	lua_pop(L, 1);
 
-	payload = luamem_checkstring(L, 3, &size);
+	luaU_unregisterudata(L, ref);
+}
 
-	if ((err = nflua_nl_send_data(s, pid, group, payload, size)) < 0)
-		return luaL_error(L, "failed to send message. Return code %d", err);
+static void unrefpacket(lua_State *L, struct luapacket *p)
+{
+	unrefmem(L, p->frame);
+	unrefmem(L, p->payload);
+	memset(p, 0, sizeof(*p));
+}
 
-	lua_pushinteger(L, (lua_Integer)size);
+void luapacket_new(lua_State *L, struct sk_buff *skb, int hooknum)
+{
+	struct luapacket *p = lua_newuserdata(L, sizeof(*p));
+
+	luaL_setmetatable(L, LUAPACKET);
+	p->skb = skb;
+	p->hooknum = hooknum;
+	p->frame = NULL;
+	p->payload = NULL;
+	p->stolen = false;
+}
+
+void luapacket_stolen(lua_State *L, int arg)
+{
+	struct luapacket *packet = luaL_checkudata(L, 1, LUAPACKET);
+
+	packet->stolen = true;
+}
+
+void luapacket_unref(lua_State *L, int arg)
+{
+	struct luapacket *packet = luaL_checkudata(L, 1, LUAPACKET);
+
+	unrefpacket(L, packet);
+}
+
+static struct luapacket *getpacket(lua_State *L)
+{
+	struct luapacket *packet = luaL_checkudata(L, 1, LUAPACKET);
+
+	if (packet->skb == NULL)
+		luaL_argerror(L, 1, "closed packet");
+
+	return packet;
+}
+
+static int luapacket_close(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+
+	if (!packet->stolen)
+		return luaL_error(L, "packet must be stolen");
+
+	kfree_skb(packet->skb);
+	unrefpacket(L, packet);
+	lua_pushboolean(L, true);
+
 	return 1;
 }
 
-static int nflua_skb_send(lua_State *L)
+static int luapacket_frame(lua_State *L)
 {
-	struct sk_buff *nskb, **lskb = luaL_checkudata(L, 1, "nflua.packet");
-	unsigned char *payload;
+	struct luapacket *packet = getpacket(L);
+
+	makememref(L, &packet->frame, skb_mac_header(packet->skb),
+	           kpi_skb_mac_header_len(packet->skb));
+
+	return 1;
+}
+
+static int luapacket_payload(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+
+	makememref(L, &packet->payload, packet->skb->data, packet->skb->len);
+
+	return 1;
+}
+
+static int luapacket_tcpreply(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+	size_t len;
+	const unsigned char *msg = luaL_checklstring(L, 2, &len);
+
+	if (tcp_reply(packet->skb, packet->hooknum, msg, len) != 0)
+		return luaU_pusherr(L, "couldn't reply a packet");
+
+	lua_pushboolean(L, true);
+
+	return 1;
+}
+
+static int luapacket_send(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+	struct sk_buff *nskb = packet->skb;
+	const unsigned char *payload;
 	size_t len;
 
-	if (*lskb == NULL)
-		return luaL_error(L, "closed packet");
+	if (!packet->stolen)
+		return luaL_error(L, "packet must be stolen");
 
-	payload = (unsigned char *)lua_tolstring(L, 2, &len);
+	payload = lua_tolstring(L, 2, &len);
 	if (payload != NULL) {
-		nskb = tcp_payload(*lskb, payload, len);
+		nskb = tcp_payload(packet->skb, payload, len);
 		if (nskb == NULL)
-			return luaL_error(L, "unable to set tcp payload");
+			return luaU_pusherr(L, "unable to set tcp payload");
 
 		/* Original packet is not needed anymore */
-		kfree_skb(*lskb);
+		kfree_skb(packet->skb);
 	} else {
-		if (unlikely(skb_shared(*lskb)))
-			return luaL_error(L, "cannot send a shared skb");
-		nskb = *lskb;
+		if (unlikely(skb_shared(packet->skb)))
+			return luaU_pusherr(L, "cannot send a shared skb");
+		nskb = packet->skb;
 	}
-	*lskb = NULL;
+	unrefpacket(L, packet);
 
 	if (route_me_harder(nskb)) {
 		kfree_skb(nskb);
-		luaL_error(L, "unable to route packet");
+		return luaU_pusherr(L, "unable to route packet");
 	}
 
 	if (tcp_send(nskb))
-		luaL_error(L, "unable to send packet");
+		return luaU_pusherr(L, "unable to send packet");
 
-	return 0;
-}
-
-static int nflua_getpacket(lua_State *L)
-{
-	struct nflua_ctx *ctx;
-
-	ctx = luaU_getregval(L, nflua_ctx);
-	if (ctx == NULL)
-		return luaL_error(L, "couldn't get packet context");
-
-	if (ctx->mode != NFLUA_TARGET)
-		return luaL_error(L, "not on target context");
-
-	if (ctx->lskb)
-		luaU_pushudata(L, ctx->lskb);
-	else {
-		ctx->lskb = lua_newuserdata(L, sizeof(struct sk_buff *));
-		*ctx->lskb = ctx->skb;
-		luaL_setmetatable(L, "nflua.packet");
-		luaU_registerudata(L, -1);
-	}
+	lua_pushboolean(L, true);
 
 	return 1;
 }
 
-static int nflua_skb_free(lua_State *L)
+static int luapacket_connid(lua_State *L)
 {
-	struct sk_buff **lskb = luaL_checkudata(L, 1, "nflua.packet");
-
-	if (*lskb != NULL) {
-		kfree_skb(*lskb);
-		*lskb = NULL;
-	}
-
-	return 0;
-}
-
-static int nflua_skb_tostring(lua_State *L)
-{
-	struct sk_buff **lskb = luaL_checkudata(L, 1, "nflua.packet");
-	struct sk_buff *skb = *lskb;
-
-	if (skb == NULL) {
-		lua_pushliteral(L, "packet closed");
-	} else {
-		lua_pushfstring(L,
-			"packet: { len:%d data_len:%d users:%d "
-			"cloned:%d dataref:%d frags:%d }",
-			skb->len,
-			skb->data_len,
-			kpi_skb_users(skb),
-			skb->cloned,
-			atomic_read(&skb_shinfo(skb)->dataref),
-			skb_shinfo(skb)->nr_frags);
-	}
-
-	return 1;
-}
-
-int nflua_connid(lua_State *L)
-{
-	struct nflua_ctx *ctx;
+	struct luapacket *packet = getpacket(L);
 	enum ip_conntrack_info info;
 	struct nf_conn *conn;
 
-	ctx = luaU_getregval(L, nflua_ctx);
-	if (ctx == NULL)
-		return luaL_error(L, "couldn't get packet context");
-
-	conn = nf_ct_get(ctx->skb, &info);
+	conn = nf_ct_get(packet->skb, &info);
 	lua_pushlightuserdata(L, conn);
 
 	return 1;
 }
 
-static int nflua_findconnid(lua_State *L)
+static int luapacket_gc(lua_State *L)
 {
-	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
-	struct nf_conn *conn;
-	struct nf_conntrack_tuple tuple;
-	struct nf_conntrack_tuple_hash *hash;
-	size_t slen, dlen;
-	lua_Integer family = luaL_checkinteger(L, 1);
-	const char *protoname[] = {"udp", "tcp", NULL};
-	const int protonums[] = {IPPROTO_UDP, IPPROTO_TCP, 0};
-	int protonum = protonums[luaL_checkoption(L, 2, NULL, protoname)];
-	const char *saddr = luaL_checklstring(L, 3, &slen);
-	lua_Integer sport = luaL_checknumber(L, 4);
-	const char *daddr = luaL_checklstring(L, 5, &dlen);
-	lua_Integer dport = luaL_checknumber(L, 6);
-	int (*pton)(const char *, int, u8 *, int, const char **);
-	const char *end;
+	struct luapacket *packet = luaL_checkudata(L, 1, LUAPACKET);
 
-	memset(&tuple, 0, sizeof(tuple));
+	if (packet->skb == NULL)
+		return 0;
 
-	switch (family) {
-	case 4:
-		tuple.src.l3num = NFPROTO_IPV4;
-		pton = in4_pton;
-		break;
-	case 6:
-		tuple.src.l3num = NFPROTO_IPV6;
-		pton = in6_pton;
-		break;
-	default:
-		return luaL_argerror(L, 1, "unknown family");
-	}
+	if (packet->stolen)
+		kfree_skb(packet->skb);
 
-	if (!pton(saddr, slen, (u8 *) tuple.src.u3.all, -1, &end))
-		luaL_argerror(L, 3, "failed to convert address to binary");
+	unrefpacket(L, packet);
 
-	if (!pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end))
-		luaL_argerror(L, 5, "failed to convert address to binary");
+	return 0;
+}
 
-	if (sport <= 0 || sport > USHRT_MAX)
-		luaL_argerror(L, 4, "invalid port");
+static int luapacket_tostring(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+	struct sk_buff *skb = packet->skb;
 
-	if (dport <= 0 || dport > USHRT_MAX)
-		luaL_argerror(L, 6, "invalid port");
-
-	tuple.dst.protonum = protonum;
-	tuple.src.u.all = htons(sport);
-	tuple.dst.u.all = htons(dport);
-
-	hash = nf_conntrack_find_get(sock_net(s->xt_lua->sock), KPI_CT_DEFAULT_ZONE, &tuple);
-
-	if (hash == NULL) {
-		lua_pushnil(L);
-		lua_pushstring(L, "connid entry not found");
-		return 2;
-	}
-
-	conn = nf_ct_tuplehash_to_ctrack(hash);
-	lua_pushlightuserdata(L, conn);
+	lua_pushfstring(L,
+		"packet: { len:%d data_len:%d users:%d "
+		"cloned:%d dataref:%d frags:%d }",
+		skb->len,
+		skb->data_len,
+		kpi_skb_users(skb),
+		skb->cloned,
+		atomic_read(&skb_shinfo(skb)->dataref),
+		skb_shinfo(skb)->nr_frags);
 
 	return 1;
 }
 
-static int nflua_traffic(lua_State *L)
-{
-	static const char *const directions[] = {
-		[IP_CT_DIR_ORIGINAL] = "original",
-		[IP_CT_DIR_REPLY] = "reply",
-		[IP_CT_DIR_MAX] = NULL
-	};
-	struct nf_conn *ct = lua_touserdata(L, 1);
-	int dir = luaL_checkoption(L, 2, NULL, directions);
-	const struct nf_conn_counter *counters;
-
-	luaL_argcheck(L, ct != NULL, 1, "invalid connid");
-
-	if ((counters = kpi_nf_conn_acct_find(ct)) == NULL) {
-		lua_pushnil(L);
-		lua_pushstring(L, "counters not found");
-		return 2;
-	}
-
-	lua_pushinteger(L, atomic64_read(&counters[dir].packets));
-	lua_pushinteger(L, atomic64_read(&counters[dir].bytes));
-
-	return 2;
-}
-
-static const luaL_Reg nflua_lib[] = {
-	{"reply", nflua_reply},
-	{"netlink", nflua_netlink},
-	{"getpacket", nflua_getpacket},
-	{"connid", nflua_connid},
-	{"findconnid", nflua_findconnid},
-	{"traffic", nflua_traffic},
+static const luaL_Reg luapacket_mt[] = {
+	{"close", luapacket_close},
+	{"frame", luapacket_frame},
+	{"payload", luapacket_payload},
+	{"tcpreply", luapacket_tcpreply},
+	{"send", luapacket_send},
+	{"connid", luapacket_connid},
+	{"__gc", luapacket_gc},
+	{"__tostring", luapacket_tostring},
 	{NULL, NULL}
 };
 
-static const luaL_Reg nflua_skb_ops[] = {
-	{"send", nflua_skb_send},
-	{"close", nflua_skb_free},
-	{"__gc", nflua_skb_free},
-	{"__tostring", nflua_skb_tostring},
-	{NULL, NULL}
-};
-
-int luaopen_nf(lua_State *L)
+int luaopen_packet(lua_State *L)
 {
-	luaL_newmetatable(L, "nflua.packet");
+	luaL_newmetatable(L, LUAPACKET);
 	lua_pushvalue(L, -1);
 	lua_setfield(L, -2, "__index");
-	luaL_setfuncs(L, nflua_skb_ops, 0);
-	lua_pop(L, 1);
-
-	luaL_newlib(L, nflua_lib);
+	luaL_setfuncs(L, luapacket_mt, 0);
 	return 1;
 }
-EXPORT_SYMBOL(luaopen_nf);
+EXPORT_SYMBOL(luaopen_packet);
