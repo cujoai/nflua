@@ -40,11 +40,11 @@ driver.test('conn connid', conntest, [[
 	end
 ]])
 
-driver.test('conn findconnid', conntest, [[
+driver.test('conn find', conntest, [[
 	local first = true
 	function f(frame, payload)
 		local ip, tcp = util.iptcp(payload)
-		local id = nf.findconnid(4, 'tcp', util.toip(ip.src), tcp.sport,
+		local id = conn.find(4, 'tcp', util.toip(ip.src), tcp.sport,
 			util.toip(ip.dst), tcp.dport)
 
 		if first then
@@ -58,11 +58,11 @@ driver.test('conn findconnid', conntest, [[
 	end
 ]])
 
-driver.test('conn findconnid not found', conntest, [[
+driver.test('conn find not found', conntest, [[
 	function f(frame, payload)
 		local ip, tcp = util.iptcp(payload)
 		-- src and dst port swapped
-		local ok, err = nf.findconnid(4, 'tcp', util.toip(ip.src),
+		local ok, err = conn.find(4, 'tcp', util.toip(ip.src),
 			tcp.dport, util.toip(ip.dst), tcp.sport)
 		assert(ok == nil)
 		assert(err == 'connid entry not found')
@@ -70,7 +70,7 @@ driver.test('conn findconnid not found', conntest, [[
 	end
 ]])
 
-driver.test('conn findconnid invalid arg', conntest, [[
+driver.test('conn find invalid arg', conntest, [[
 	function f(frame, payload)
 		local ip, tcp = util.iptcp(payload)
 		local args = {4, 'tcp', util.toip(ip.src), tcp.sport,
@@ -80,9 +80,9 @@ driver.test('conn findconnid invalid arg', conntest, [[
 			local finalargs = {table.unpack(args)}
 			finalargs[arg] = v
 			local finalmsg = string.format(
-				"bad argument #%d to 'nf.findconnid' (%s)",
+				"bad argument #%d to 'conn.find' (%s)",
 				arg, msg)
-			local ok, err = pcall(nf.findconnid,
+			local ok, err = pcall(conn.find,
 				table.unpack(finalargs))
 			assert(ok == false)
 			print(err, finalmsg)
@@ -123,7 +123,7 @@ driver.test('conn traffic', conntest, string.format([[
 		packets[dir] = packets[dir] + 1
 		bytes[dir] = bytes[dir] + #payload
 
-		local p, b = nf.traffic(nf.connid(), dir)
+		local p, b = conn.traffic(nf.connid(), dir)
 		assert(p == packets[dir])
 		assert(b == bytes[dir])
 
@@ -133,13 +133,13 @@ driver.test('conn traffic', conntest, string.format([[
 
 driver.test('conn traffic invalid param', conntest, [[
 	function f()
-		local ok, err = pcall(nf.traffic, nil, 'original')
+		local ok, err = pcall(conn.traffic, nil, 'original')
 		assert(ok == false)
-		assert(err == "bad argument #1 to 'nf.traffic' (invalid connid)")
+		assert(err == "bad argument #1 to 'conn.traffic' (invalid connid)")
 
-		local ok, err = pcall(nf.traffic, nf.connid(), 'xxx')
+		local ok, err = pcall(conn.traffic, nf.connid(), 'xxx')
 		assert(ok == false)
-		assert(err == "bad argument #2 to 'nf.traffic' (invalid option 'xxx')")
+		assert(err == "bad argument #2 to 'conn.traffic' (invalid option 'xxx')")
 
 		return true
 	end
