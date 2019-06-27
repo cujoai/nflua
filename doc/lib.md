@@ -15,48 +15,16 @@ _with this program; if not, write to the Free Software Foundation, Inc.,_
 _51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA._
 - - -
 
-Index
------
+# Introduction
 
-- [`nflua.control`](#control--nfluacontrolport)
-- [`nflua.data`](#nfluadataport)
-- [`nflua.datamaxsize`](#nfluadatamaxsize)
-- [`nflua.defaultmaxallocbytes`](#nfluadefaultmaxallocbytes)
-- [`nflua.maxstates`](#nfluamaxstates)
-- [`nflua.scriptnamemaxsize`](#nfluascriptnamemaxsize)
-- [`nflua.statenamemaxsize`](#nfluastatenamemaxsize)
-- [`control:close`](#controlclose)
-- [`control:getfd`](#controlgetfd)
-- [`control:getpid`](#controlgetpid)
-- [`control:getstate`](#controlgetstate)
-- [`control:create`](#controlcreatename--maxalloc)
-- [`control:destroy`](#controldestroystate)
-- [`control:execute`](#controlexecutestate-chunk--scriptname)
-- [`control:list`](#controllist)
-- [`control:receive`](#result--controlreceive)
-- [`data:close`](#dataclose)
-- [`data:getfd`](#datagetfd)
-- [`data:getpid`](#datagetpid)
-- [`data:send`](#datasendstate-buffer)
-- [`data:receive`](#recv-state--datareceivebuffer-offset)
-
-Contents
---------
-
+This documentation describes the user space Lua library that manages the Lunatik states in NFLua.
 Unless otherwise stated, all functions return `nil` on failure, plus an error message and a system-dependent error code.
 In case of success, the functions return a value different from `nil`; `true` if not stated otherwise.
 If the contract of the functions are not respected, the function may trigger an error.
 
-### `control = nflua.control([port])`
+# Contents
 
-Returns a new control socket that can be used to send control messages to the NFLua kernel module over Netlink.
-The number `port` is used as the port ID of the socket and it must be in range [1, 2^31).
-If `port` is absent an automatic port ID is assigned.
-
-### `nflua.data([port])`
-
-Returns a new data socket that can be used to send data to Lua states of the NFLua kernel module over Netlink.
-The number `port` is interpreted just like in function [`nflua.control`](#control--nfluacontrolport).
+## Constants
 
 ### `nflua.datamaxsize`
 
@@ -77,6 +45,14 @@ Integer constant that represents the maximum name size of a script.
 ### `nflua.statenamemaxsize`
 
 Integer constant that represents the maximum name size of a state.
+
+## Control Socket
+
+### `control = nflua.control([port])`
+
+Returns a new control socket that can be used to send control messages to the NFLua kernel module over Netlink.
+The number `port` is used as the port ID of the socket and it must be in range [1, 2^31).
+If `port` is absent an automatic port ID is assigned.
 
 ### `control:close()`
 
@@ -137,6 +113,13 @@ The reply of commands sent by operation [`control:list`](#controllist) return a 
 	curralloc = 12345, -- number of bytes currently allocated.
 }
 ```
+
+## Data Socket
+
+### `nflua.data([port])`
+
+Returns a new data socket that can be used to send data to Lua states of the NFLua kernel module over Netlink.
+The number `port` is interpreted just like in function [`nflua.control`](#control--nfluacontrolport).
 
 ### `data:close()`
 
