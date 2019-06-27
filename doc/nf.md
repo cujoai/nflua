@@ -15,57 +15,67 @@ _with this program; if not, write to the Free Software Foundation, Inc.,_
 _51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA._
 - - -
 
-Index
------
+# Introduction
 
-- [`match`](#match-callback-function)
-- [`target`](#match-callback-function)
-- [`nf.connid`](#id--nfconnid)
-- [`nf.findconnid`](#id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport)
-- [`nf.getpacket`](#packet--nfgetpacket)
-- [`nf.netlink`](#size--nfnetlinkport-groups-payload)
-- [`nf.reply`](#nfreplytype-message)
-- [`nf.traffic`](#packets-bytes--nftrafficid-dir)
-- [`packet:close`](#packetclose)
-- [`packet:send`](#packetsendpayload)
+This documentation describes the Lua kernel modules that are available in NFLua.
 
-Contents
---------
+# Netfilter Callbacks
 
-### Match callback function
+## Match callback function
 
 ```
-function match(frame, payload)
+function match(pkt)
 	return true
 end
 ```
 
-The match callback receives two Luadata objects representing the frame (L1 header), and the payload (starting from L2 header) of the intercepted packet.
+The match callback receives one [packet object](#packet) `pkt` representing a Linux `sk_buff`.
+After the callback returns no further operations can be performed on the packet.
 This callback should return either a boolean to indicate whether it's a match, or `"hotdrop"` to indicate hotdropping the packet; other return values are considered an error.
 In case of errors, it is considered that the match function returned false.
 For information on how to register a match callback see the `nflua/iptables/README.md` documentation.
 
-### Target callback function
+## Target callback function
 
 ```
-function target(packet)
+function target(pkt)
 	return 'drop'
 end
 ```
 
-The target callback receives two Luadata objects representing the frame (L1 header), and the payload (starting from L2 header) of the intercepted packet.
+The target callback receives one [packet object](#packet) `pkt` representing a Linux sk_buff.
+After the callback returns no further operations can be performed on the packet unless it returned `'stolen'`.
 This callback should return one of the following strings: `'drop'`, `'accept'`, `'stolen'`, `'queue'`, `'repeat'` and `'stop'`.
 Returning any other value will have the same effect as `XT_CONTINUE`.
 For information on how to register a target callback see the `nflua/iptables/README.md` documentation.
 
-### `id = nf.connid()`
+# Modules
 
-Returns a userdata that represents the ID of the current connection as maintained by `conntrack` module of Netfilter.
-This `id` might be reused by other future connections, but such reuse indicates that all previous connections identified by the same value are not tracked anymore.
+## Netlink
 
-### `id = nf.findconnid(family, protocol, srcaddr, srcport, dstaddr, dstport)`
+### `size = netlink.send(port, groups, payload)`
 
-Returns a userdata that represents the ID of the connection specified, similar to [`nf.connid`](#id--nfconnid). Raises an error in case of invalid parameters.
+Sends a Netlink datagram using protocol defined by kernel symbol `NETLINK_NFLUA`.
+The datagram is sent to port with ID given by number `port` and to multicast groups given by the bits on number `groups`.
+The contents of the datagram is given by the parameter `payload`, which can be either a string or a [memory](https://github.com/cujoai/lua-memory/) object.
+
+## Timer
+
+### `timer = timer.create(msecs, callback)`
+
+Return a new timer that will call the function `callback` once after `msecs` milliseconds.
+
+### `timer.destroy(timer)`
+
+If `timer` was never triggered, it is cancelled so its callback will not be called.
+Otherwise, this function has no effect.
+
+## Conntrack
+
+### `id = conn.find(family, protocol, srcaddr, srcport, dstaddr, dstport)`
+
+Returns a userdata that represents the ID of the connection specified, similar to [`packet:connid`](#id--packetconnid).
+Raises an error in case of invalid parameters.
 Returns nil and an error message if it can't find the connection ID.
 
 `family` is either 4 or 6.
@@ -110,48 +120,58 @@ In such case, the output of the command `conntrack -L` should be:
   ipv4     2 udp      17 0 src=192.168.1.100 dst=8.8.8.8 sport=8080 dport=22 packets=1 bytes=76 src=8.8.8.8 dst=10.0.0.38 sport=22 dport=8080 packets=1 bytes=76 mark=0 use=2
 ```
 
-Moreover, the code below illustrates the result of `findconnid` in such case.
+Moreover, the code below illustrates the result of `conn.find` in such case.
 
 ```lua
-local id1 = nf.findconnid(4, "udp", "192.168.1.100", 8080, "8.8.8.8", 22)
-local id2 = nf.findconnid(4, "udp", "10.0.0.38", 8080, "8.8.8.8", 22)
-local id3 = nf.findconnid(4, "udp", "8.8.8.8", 22, "10.0.0.38", 8080)
-local id4 = nf.findconnid(4, "udp", "8.8.8.8", 22, "192.168.1.100", 8080)
+local id1 = conn.find(4, "udp", "192.168.1.100", 8080, "8.8.8.8", 22)
+local id2 = conn.find(4, "udp", "10.0.0.38", 8080, "8.8.8.8", 22)
+local id3 = conn.find(4, "udp", "8.8.8.8", 22, "10.0.0.38", 8080)
+local id4 = conn.find(4, "udp", "8.8.8.8", 22, "192.168.1.100", 8080)
 
 assert(id1 == id3)
 assert(id2 == nil)
 assert(id4 == nil)
 ```
 
-### `packet = nf.getpacket()`
-
-Returns a copy of the current packet being filtered by Netlink framework.
-This function can only be called from a NFLua evaluation callback function.
-
-### `size = nf.netlink(port, groups, payload)`
-
-Sends a Netlink datagram using protocol defined by kernel symbol `NETLINK_NFLUA`.
-The datagram is sent to port with ID given by number `port` and to multicast groups given by the bits on number `groups`.
-The datagram contains the string `payload` as payload.
-
-### `nf.reply(type, message)`
-
-Sends a TCP reply with the string `message` as payload.
-`type` must be string that starts with character `t`.
-
-### `packets, bytes = nf.traffic(id, dir)`
+### `packets, bytes = conn.traffic(id, dir)`
 
 Returns the numbers of packets and the number of bytes of the given connection defined by `id`.
-The connection `id` can be retrieved by [`nf.connid`](#id--nfconnid) and [`nf.findconnid`](#id--nffindconnidfamily-protocol-srcaddr-srcport-dstaddr-dstport).
+The connection `id` can be retrieved by either [`packet:connid`](#id--packetconnid) or [`conn.find`](#id--connfindfamily-protocol-srcaddr-srcport-dstaddr-dstport).
 The parameter `dir` should be either `"original"` or `"reply"`.
+
+## Packet
 
 ### `packet:close()`
 
-Discards all resources of copied packet `packet`.
-After this call no further operations can be performed on packet `packet`.
+Discards all resources of the packet; this function can only be called on packets that have been stolen.
+After this call no further operations can be performed on the packet.
+Returns true on success.
+
+### `id = packet:connid()`
+
+Returns a userdata that represents the ID of the packet's connection as maintained by `conntrack` module of Netfilter.
+This `id` might be reused by other future connections, but such reuse indicates that all previous connections identified by the same value are not tracked anymore.
+
+### `mem = packet:frame()`
+
+Returns a [memory](https://github.com/cujoai/lua-memory/) object which references the frame part of the packet (L1 header).
+When the packet is closed the memory object becomes empty and stop referencing the packet.
+
+### `mem = packet:payload()`
+
+Returns a [memory](https://github.com/cujoai/lua-memory/) object which references the payload part of the packet (starting from L2 header).
+When the packet is closed the memory object becomes empty and stop referencing the packet.
 
 ### `packet:send([payload])`
 
-Send the copied packet `packet` through the network and then closes it, thus it cannot be sent again.
+Send the packet through the network and then closes it, thus it cannot be sent again.
 If `payload` is provided, the original packet payload is replaced by the contents of string `payload`.
-This function only works when you acquire the packet during a match in FORWARD chain.
+This function only works after you steal the packet in the FORWARD chain.
+
+### `packet:tcpreply(type, message)`
+
+Sends a TCP reply with the string `message` as payload.
+To this function work two conditions must be met:
+
+- The original packet must be intercepted in the FORWARD chain.
+- The address of the recipient of the reply packet must be in the same subnet of the interface that the original packet was intercepted.
