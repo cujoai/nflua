@@ -34,12 +34,20 @@
 #define NFLUA_SETPAUSE	100
 #endif /* NFLUA_SETPAUSE */
 
-#define LUA_MEMORYLIBNAME "memory"
-extern int luaopen_memory(lua_State* L);
-#define LUA_NFLIBNAME "nf"
-extern int luaopen_nf(lua_State* L);
-#define LUA_TIMERLIBNAME "timer"
-extern int luaopen_timer(lua_State* L);
+extern int luaopen_memory(lua_State *);
+extern int luaopen_conn(lua_State *);
+extern int luaopen_netlink(lua_State *);
+extern int luaopen_packet(lua_State *);
+extern int luaopen_timer(lua_State *);
+
+static const luaL_Reg libs[] = {
+	{"memory", luaopen_memory},
+	{"conn", luaopen_conn},
+	{"netlink", luaopen_netlink},
+	{"packet", luaopen_packet},
+	{"timer", luaopen_timer},
+	{NULL, NULL}
+};
 
 static inline int name_hash(void *salt, const char *name)
 {
@@ -116,6 +124,8 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 
 static int state_init(struct nflua_state *s)
 {
+	const luaL_Reg *lib;
+
 	s->L = lua_newstate(lua_alloc, s);
 	if (s->L == NULL)
 		return -ENOMEM;
@@ -123,10 +133,10 @@ static int state_init(struct nflua_state *s)
 	luaU_setenv(s->L, s, struct nflua_state);
 	luaL_openlibs(s->L);
 
-	luaL_requiref(s->L, LUA_MEMORYLIBNAME, luaopen_memory, 1);
-	luaL_requiref(s->L, LUA_NFLIBNAME, luaopen_nf, 1);
-	luaL_requiref(s->L, LUA_TIMERLIBNAME, luaopen_timer, 1);
-	lua_pop(s->L, 3);
+	for (lib = libs; lib->name != NULL; lib++) {
+		luaL_requiref(s->L, lib->name, lib->func, 1);
+		lua_pop(s->L, 1);
+	}
 
 	/* fixes an issue where the Lua's GC enters a vicious cycle.
 	 * more info here: https://marc.info/?l=lua-l&m=155024035605499&w=2
