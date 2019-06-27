@@ -76,7 +76,7 @@ static void timeout_cb(kpi_timer_list_t l)
 
 	lua_getuservalue(ctx->state->L, -1);
 	if (lua_pcall(ctx->state->L, 0, 0, 0) != 0) {
-		pr_warn("%s", lua_tostring(ctx->state->L, -1));
+		pr_err("%s\n", lua_tostring(ctx->state->L, -1));
 		goto cleanup;
 	}
 
