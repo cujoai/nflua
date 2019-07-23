@@ -157,11 +157,6 @@ This `id` might be reused by other future connections, but such reuse indicates 
 Returns a [memory](https://github.com/cujoai/lua-memory/) object which references the frame part of the packet (L1 header).
 When the packet is closed the memory object becomes empty and stop referencing the packet.
 
-### `mem = packet:payload()`
-
-Returns a [memory](https://github.com/cujoai/lua-memory/) object which references the payload part of the packet (starting from L2 header).
-When the packet is closed the memory object becomes empty and stop referencing the packet.
-
 ### `packet:send([payload])`
 
 Send the packet through the network and then closes it, thus it cannot be sent again.
@@ -175,3 +170,20 @@ To this function work two conditions must be met:
 
 - The original packet must be intercepted in the FORWARD chain.
 - The address of the recipient of the reply packet must be in the same subnet of the interface that the original packet was intercepted.
+
+### `... = packet:unpack(fmt [, pos])`
+
+Returns the values encoded in position `pos` of packet's payload (see diagram below), according to the format `fmt` (see the [Lua manual](https://www.lua.org/manual/5.3/manual.html#6.4.2)).
+Formats `f`, `d` are not supported.
+The default value for `pos` is 1.
+
+```
++-----------------------------------------+
+|packet header||      packet payload      |
++-----------------------------------------+
++-----------------------------------------+
+|             ||      |       |           |
+|  Ethernet   ||  IP  |  TCP  |    ...    |
+|             ||      |       |           |
++---------------------+-------+-----------+
+```

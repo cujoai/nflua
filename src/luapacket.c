@@ -36,7 +36,6 @@ struct luapacket {
 	struct sk_buff *skb;
 	int hooknum;
 	void *frame;
-	void *payload;
 	bool stolen;
 };
 
@@ -69,7 +68,6 @@ static void unrefmem(lua_State *L, void *ref)
 static void unrefpacket(lua_State *L, struct luapacket *p)
 {
 	unrefmem(L, p->frame);
-	unrefmem(L, p->payload);
 	memset(p, 0, sizeof(*p));
 }
 
@@ -81,7 +79,6 @@ void luapacket_new(lua_State *L, struct sk_buff *skb, int hooknum)
 	p->skb = skb;
 	p->hooknum = hooknum;
 	p->frame = NULL;
-	p->payload = NULL;
 	p->stolen = false;
 }
 
@@ -129,15 +126,6 @@ static int luapacket_frame(lua_State *L)
 
 	makememref(L, &packet->frame, skb_mac_header(packet->skb),
 	           kpi_skb_mac_header_len(packet->skb));
-
-	return 1;
-}
-
-static int luapacket_payload(lua_State *L)
-{
-	struct luapacket *packet = getpacket(L);
-
-	makememref(L, &packet->payload, packet->skb->data, packet->skb->len);
 
 	return 1;
 }
@@ -239,15 +227,28 @@ static int luapacket_tostring(lua_State *L)
 	return 1;
 }
 
+static int luapacket_len(lua_State *L)
+{
+	struct luapacket *packet = getpacket(L);
+	struct sk_buff *skb = packet->skb;
+
+	lua_pushinteger(L, skb->len);
+
+	return 1;
+}
+
+static int luapacket_unpack(lua_State *L);
+
 static const luaL_Reg luapacket_mt[] = {
 	{"close", luapacket_close},
 	{"frame", luapacket_frame},
-	{"payload", luapacket_payload},
 	{"tcpreply", luapacket_tcpreply},
 	{"send", luapacket_send},
 	{"connid", luapacket_connid},
 	{"__gc", luapacket_gc},
 	{"__tostring", luapacket_tostring},
+	{"__len", luapacket_len},
+	{"unpack", luapacket_unpack},
 	{NULL, NULL}
 };
 
@@ -260,3 +261,5 @@ int luaopen_packet(lua_State *L)
 	return 1;
 }
 EXPORT_SYMBOL(luaopen_packet);
+
+#include "lua/lstrlib.c"

@@ -152,11 +152,6 @@ static union call_result nflua_call(struct sk_buff *skb,
 		break;
 	}
 
-	if (skb_linearize(skb) != 0) {
-		pr_err("skb linearization failed\n");
-		return r;
-	}
-
 	spin_lock(&info->state->lock);
 	if (L == NULL) {
 		pr_err("invalid lua state");

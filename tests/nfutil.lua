@@ -59,7 +59,7 @@ local ipfmt =
 	"I4".. -- src
 	"I4"   -- dst
 
-local function iplayout(buff)
+local function iplayout(packet)
 	local hdr = {}
 	local ver_ihl, tos_ecn, flg_off
 	ver_ihl,
@@ -71,7 +71,7 @@ local function iplayout(buff)
 	hdr.protocol,
 	hdr.check,
 	hdr.src,
-	hdr.dst = memory.unpack(buff, ipfmt)
+	hdr.dst = packet:unpack(ipfmt)
 	hdr.version = (ver_ihl & 0xf0) >> 4
 	hdr.ihl = ver_ihl & 0x0f
 	hdr.tos = (tos_ecn & 0xfc) >> 2
@@ -89,21 +89,23 @@ local tcpfmt =
 	"I4".. -- ackn
 	"B"  -- doff(4)
 
-local function tcplayout(buff, off)
+local function tcplayout(packet, off)
 	local hdr = {}
 	local doff
 	hdr.sport,
 	hdr.dport,
 	hdr.seqn,
 	hdr.ackn,
-	doff = memory.unpack(buff, tcpfmt, off + 1)
+	doff = packet:unpack(tcpfmt, off)
 	hdr.doff = (doff & 0xf0) >> 4
 	return hdr
 end
 
-function util.iptcp(payload)
-	local ip = iplayout(payload)
-	local tcp = tcplayout(payload, ip.ihl * 4)
-	local data = memory.tostring(payload, (ip.ihl + tcp.doff) * 4 + 1)
+function util.iptcp(packet)
+	local ip = iplayout(packet)
+	local tcp = tcplayout(packet, ip.ihl * 4 + 1)
+	local doff = (ip.ihl + tcp.doff) * 4 + 1
+	local dlen = (#packet - doff) + 1
+	local data = packet:unpack('c'..dlen, doff)
 	return ip, tcp, data
 end

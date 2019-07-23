@@ -41,6 +41,8 @@ local jmprule = 'FORWARD -j ' .. chain
 network.svaddr = svaddr
 network.svport = 12345
 
+network.claddr = claddr
+
 network.toserver = string.format('%s -i %s -d %s -p tcp', chain, br0, svaddr)
 network.toclient = string.format('%s -i %s -d %s -p tcp', chain, br0, claddr)
 network.toany = string.format('%s -i %s', chain, br0)

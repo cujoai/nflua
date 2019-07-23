@@ -43,7 +43,7 @@ driver.test('conn connid', conntest, [[
 driver.test('conn find', conntest, [[
 	local first = true
 	function f(pkt)
-		local ip, tcp = util.iptcp(pkt:payload())
+		local ip, tcp = util.iptcp(pkt)
 		local id = conn.find(4, 'tcp', util.toip(ip.src),
 			tcp.sport, util.toip(ip.dst), tcp.dport)
 
@@ -60,7 +60,7 @@ driver.test('conn find', conntest, [[
 
 driver.test('conn find not found', conntest, [[
 	function f(pkt)
-		local ip, tcp = util.iptcp(pkt:payload())
+		local ip, tcp = util.iptcp(pkt)
 		-- src and dst port swapped
 		local ok, err = conn.find(4, 'tcp', util.toip(ip.src),
 			tcp.dport, util.toip(ip.dst), tcp.sport)
@@ -72,7 +72,7 @@ driver.test('conn find not found', conntest, [[
 
 driver.test('conn find invalid arg', conntest, [[
 	function f(pkt)
-		local ip, tcp = util.iptcp(pkt:payload())
+		local ip, tcp = util.iptcp(pkt)
 		local args = {4, 'tcp', util.toip(ip.src), tcp.sport,
 			util.toip(ip.dst), tcp.dport}
 
@@ -118,11 +118,10 @@ driver.test('conn traffic', conntest, string.format([[
 	local bytes = {original = 0, reply = 0}
 
 	function f(pkt)
-		local payload = pkt:payload()
-		local ip = util.iptcp(payload)
+		local ip = util.iptcp(pkt)
 		local dir = util.toip(ip.dst) == svaddr and 'original' or 'reply'
 		packets[dir] = packets[dir] + 1
-		bytes[dir] = bytes[dir] + #payload
+		bytes[dir] = bytes[dir] + #pkt
 
 		local pkt, b = conn.traffic(pkt:connid(), dir)
 		assert(pkt == packets[dir])

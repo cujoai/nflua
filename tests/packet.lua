@@ -31,9 +31,9 @@ local methods = {
 	'close',
 	'connid',
 	'frame',
-	'payload',
 	'send',
 	'tcpreply',
+	'unpack'
 }
 
 local function afterreturn(fname)
@@ -144,11 +144,12 @@ driver.test('packet frame', function()
 	driver.matchdmesg(2, token .. network.svmac())
 end)
 
-driver.test('packet payload', function()
+driver.test('packet unpack payload', function()
 	local code = [[
 		function f(pkt)
-			local ip, tcp, data = util.iptcp(pkt:payload())
+			local ip, tcp, data = util.iptcp(pkt)
 			print(util.toip(ip.src) .. tcp.sport .. data)
+			print(util.toip(ip.dst) .. data)
 			return 'continue'
 		end
 	]]
@@ -156,17 +157,40 @@ driver.test('packet payload', function()
 	util.assertexec(targetrule)
 	local token = util.gentoken()
 	network.asserttraffic(token, token)
-	driver.matchdmesg(3, network.svaddr .. network.svport .. token)
+	driver.matchdmesg(4, network.svaddr .. network.svport .. token)
+	driver.matchdmesg(3, network.claddr .. token)
 end)
 
-driver.test('packet mem unref', function()
+driver.test('packet unpack invalid args', function ()
+	local code = [[
+		function f(pkt)
+			local ok, err = pcall(pkt.unpack, pkt, %s)
+			print(err)
+			return false
+		end
+	]]
+	local cases = {
+		{args = '"c1", #pkt + 1', msg = 'payload too short'},
+		{args = '"z", #pkt - 2', msg = 'payload too short'},
+		{args = '"f", 1', msg = 'invalid format option'}
+	}
+	local c = driver.setup('st', nil, true)
+	util.assertexec(matchrule)
+	for _, case in ipairs(cases) do
+		driver.run(c, 'execute', 'st', string.format(code, case.args))
+		network.asserttraffic()
+		driver.matchdmesg(3, case.msg)
+	end
+end)
+
+driver.test('packet frame unref', function()
 	local token = util.gentoken()
 	local code = string.format([[
 		local timeout, token = %d, %q
 		function f(pkt)
-			local frame, payload = pkt:frame(), pkt:payload()
+			local frame = pkt:frame()
 			timer.create(timeout, function()
-				print(token .. #frame .. #payload)
+				print(token .. #frame)
 			end)
 			return 'continue'
 		end
@@ -175,7 +199,7 @@ driver.test('packet mem unref', function()
 	util.assertexec(targetrule)
 	network.asserttraffic()
 	util.assertexec('sleep %f', timeout / 1000)
-	driver.matchdmesg(2, token .. 0 .. 0)
+	driver.matchdmesg(2, token .. 0)
 end)
 
 driver.test('packet send', function()

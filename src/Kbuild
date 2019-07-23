@@ -17,7 +17,7 @@
 #
 
 # Add -DDEBUG to the line below to increment nflua output
-ccflags-y += -D_KERNEL
+ccflags-y += -D_KERNEL -D_NFLUA
 
 obj-$(CONFIG_NFLUA) += nflua.o
 nflua-objs += \
