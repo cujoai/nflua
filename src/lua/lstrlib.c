@@ -1,9 +1,31 @@
-/*
-** $Id: lstrlib.c,v 1.253 2016/12/20 18:37:00 roberto Exp roberto $
-** Standard library for string operations and pattern-matching
-** See Copyright Notice in lua.h
-*/
+/******************************************************************************
+#ifdef _KERNEL
+* Copyright (c) 2017-2019 CUJO LLC.
+* Copyright (c) 2016-2016 Lourival Vieira Neto <lneto@NetBSD.org>.
+#endif
+* Copyright (C) 1994-2017 Lua.org, PUC-Rio.
+*
+* Permission is hereby granted, free of charge, to any person obtaining
+* a copy of this software and associated documentation files (the
+* "Software"), to deal in the Software without restriction, including
+* without limitation the rights to use, copy, modify, merge, publish,
+* distribute, sublicense, and/or sell copies of the Software, and to
+* permit persons to whom the Software is furnished to do so, subject to
+* the following conditions:
+*
+* The above copyright notice and this permission notice shall be
+* included in all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+* IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+* CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+* TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+* SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+******************************************************************************/
 
+#ifndef _NFLUA
 #define lstrlib_c
 #define LUA_LIB
 
@@ -35,6 +57,7 @@
 #if !defined(LUA_MAXCAPTURES)
 #define LUA_MAXCAPTURES		32
 #endif
+#endif /* _NFLUA */
 
 
 /* macro to 'unsign' a character */
@@ -53,12 +76,14 @@
 
 
 
+#ifndef _NFLUA
 static int str_len (lua_State *L) {
   size_t l;
   luaL_checklstring(L, 1, &l);
   lua_pushinteger(L, (lua_Integer)l);
   return 1;
 }
+#endif /* _NFLUA */
 
 
 /* translate a relative string position: negative means back from end */
@@ -69,6 +94,7 @@ static lua_Integer posrelat (lua_Integer pos, size_t len) {
 }
 
 
+#ifndef _NFLUA
 static int str_sub (lua_State *L) {
   size_t l;
   const char *s = luaL_checklstring(L, 1, &l);
@@ -1105,6 +1131,7 @@ static int str_format (lua_State *L) {
 }
 
 /* }====================================================== */
+#endif /* _NFLUA */
 
 
 /*
@@ -1310,6 +1337,7 @@ static KOption getdetails (Header *h, size_t totalsize,
 }
 
 
+#ifndef _NFLUA
 /*
 ** Pack integer 'n' with 'size' bytes and 'islittle' endianness.
 ** The final 'if' handles the case when 'size' is larger than
@@ -1465,6 +1493,7 @@ static int str_packsize (lua_State *L) {
   lua_pushinteger(L, (lua_Integer)totalsize);
   return 1;
 }
+#endif /* _NFLUA */
 
 
 /*
@@ -1475,11 +1504,20 @@ static int str_packsize (lua_State *L) {
 ** it must check the unread bytes to see whether they do not cause an
 ** overflow.
 */
+#ifndef _NFLUA
 static lua_Integer unpackint (lua_State *L, const char *str,
                               int islittle, int size, int issigned) {
+#else
+static lua_Integer unpackint (lua_State *L, struct sk_buff *skb, int pos,
+                              int islittle, int size, int issigned) {
+#endif /* _NFLUA */
   lua_Unsigned res = 0;
   int i;
   int limit = (size  <= SZINT) ? size : SZINT;
+#ifdef _NFLUA
+  char buffer[MAXINTSIZE];
+  const char *str = skb_header_pointer(skb, pos, size, buffer);
+#endif /* _NFLUA */
   for (i = limit - 1; i >= 0; i--) {
     res <<= NB;
     res |= (lua_Unsigned)(unsigned char)str[islittle ? i : size - 1 - i];
@@ -1500,21 +1538,51 @@ static lua_Integer unpackint (lua_State *L, const char *str,
   return (lua_Integer)res;
 }
 
+#ifdef _NFLUA
+static void unpackstr (lua_State *L, const struct sk_buff *skb, int pos, int size) {
+  if (skb_headlen(skb) - pos >= size) { /* string is in linear area? */
+    lua_pushlstring(L, skb->data + pos, size);
+  } else {
+    luaL_Buffer b;
+    char *buffer = luaL_buffinitsize(L, &b, size);
+    skb_copy_bits(skb, pos, buffer, size);
+    luaL_pushresultsize(&b, size);
+  }
+}
+#endif
 
+#ifndef _NFLUA
 static int str_unpack (lua_State *L) {
+#else
+static int luapacket_unpack (lua_State *L) {
+#endif /* _NFLUA */
   Header h;
+#ifndef _NFLUA
   const char *fmt = luaL_checkstring(L, 1);
   size_t ld;
   const char *data = luaL_checklstring(L, 2, &ld);
+#else
+  struct luapacket *p = getpacket(L);
+  size_t ld = p->skb->len;
+  const char *fmt = luaL_checkstring(L, 2);
+#endif /* _NFLUA */
   size_t pos = (size_t)posrelat(luaL_optinteger(L, 3, 1), ld) - 1;
   int n = 0;  /* number of results */
+#ifndef _NFLUA
   luaL_argcheck(L, pos <= ld, 3, "initial position out of string");
+#else
+  luaL_argcheck(L, pos <= ld, 3, "initial position out of payload");
+#endif /* _NFLUA */
   initheader(L, &h);
   while (*fmt != '\0') {
     int size, ntoalign;
     KOption opt = getdetails(&h, pos, &fmt, &size, &ntoalign);
     if ((size_t)ntoalign + size > ~pos || pos + ntoalign + size > ld)
+#ifndef _NFLUA
       luaL_argerror(L, 2, "data string too short");
+#else
+      luaL_argerror(L, 2, "payload too short");
+#endif /* _NFLUA */
     pos += ntoalign;  /* skip alignment */
     /* stack space for item + next position */
     luaL_checkstack(L, 2, "too many results");
@@ -1522,8 +1590,13 @@ static int str_unpack (lua_State *L) {
     switch (opt) {
       case Kint:
       case Kuint: {
+#ifndef _NFLUA
         lua_Integer res = unpackint(L, data + pos, h.islittle, size,
                                        (opt == Kint));
+#else
+        lua_Integer res = unpackint(L, p->skb, pos, h.islittle, size,
+                                       (opt == Kint));
+#endif /* _NFLUA */
         lua_pushinteger(L, res);
         break;
       }
@@ -1540,19 +1613,51 @@ static int str_unpack (lua_State *L) {
       }
 #endif /* _KERNEL */
       case Kchar: {
+#ifndef _NFLUA
         lua_pushlstring(L, data + pos, size);
+#else
+        unpackstr(L, p->skb, pos, size);
+#endif /* _NFLUA */
         break;
       }
       case Kstring: {
+#ifndef _NFLUA
         size_t len = (size_t)unpackint(L, data + pos, h.islittle, size, 0);
         luaL_argcheck(L, pos + len + size <= ld, 2, "data string too short");
         lua_pushlstring(L, data + pos + size, len);
         pos += len;  /* skip string */
+#else
+        size_t lendata;
+        lendata = (size_t)unpackint(L, p->skb, pos, h.islittle, size, 0);
+        luaL_argcheck(L, pos + lendata + size <= ld, 1, "payload too short");
+        unpackstr(L, p->skb, pos, lendata);
+        pos += lendata;  /* skip string */
+#endif /* _NFLUA */
         break;
       }
       case Kzstr: {
+#ifndef _NFLUA
         size_t len = (int)strlen(data + pos);
         lua_pushlstring(L, data + pos, len);
+#else
+        struct skb_seq_state st;
+        const u8 *s;
+        const char *z = NULL;
+        size_t len = 0;
+        size_t consumed = 0;
+        size_t read = 0;
+        skb_prepare_seq_read(p->skb, pos, ld, &st);
+        while ((read = skb_seq_read(consumed, &s, &st)) != 0) {
+          z = memchr(s, '\0', read);
+          if (z) {
+            len = ((size_t)(z - (const char *)s)) + consumed;
+            break;
+          }
+          consumed += read;
+        }
+        luaL_argcheck(L, z, 2, "payload too short");
+        unpackstr(L, p->skb, pos, len);
+#endif /* _NFLUA */
         pos += len + 1;  /* skip string plus final '\0' */
         break;
       }
@@ -1569,6 +1674,7 @@ static int str_unpack (lua_State *L) {
 /* }====================================================== */
 
 
+#ifndef _NFLUA
 static const luaL_Reg strlib[] = {
   {"byte", str_byte},
   {"char", str_char},
@@ -1612,3 +1718,4 @@ LUAMOD_API int luaopen_string (lua_State *L) {
   return 1;
 }
 
+#endif /* _NFLUA */
