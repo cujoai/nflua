@@ -144,7 +144,7 @@ Returns true on success.
 
 ### `id = packet:connid()`
 
-Returns a userdata that represents the ID of the packet's connection as maintained by `conntrack` module of Netfilter.
+Returns an integer that represents the ID of the packet's connection as maintained by `conntrack` module of Netfilter.
 This `id` might be reused by other future connections, but such reuse indicates that all previous connections identified by the same value are not tracked anymore.
 
 ### `mem = packet:frame()`

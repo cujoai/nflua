@@ -189,7 +189,7 @@ static int luapacket_connid(lua_State *L)
 	struct nf_conn *conn;
 
 	conn = nf_ct_get(packet->skb, &info);
-	lua_pushlightuserdata(L, conn);
+	lua_pushinteger(L, (lua_Integer)conn);
 
 	return 1;
 }
