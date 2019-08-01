@@ -72,16 +72,16 @@ Otherwise, this function has no effect.
 
 ## Conntrack
 
-### `id = conn.find(family, protocol, srcaddr, srcport, dstaddr, dstport)`
+### `packets, bytes [, packets, bytes] = nf.traffic(family, protocol, srcaddr, srcport, dstaddr, dstport, dir)`
 
-Returns a userdata that represents the ID of the connection specified, similar to [`packet:connid`](#id--packetconnid).
-Raises an error in case of invalid parameters.
-Returns nil and an error message if it can't find the connection ID.
+Returns the numbers of packets and the number of bytes of a given connection.
 
 `family` is either 4 or 6.
 `protocol` is either `'tcp'` or `'udp'`.
 `srcaddr` and `dstaddr` are the dotted-notation strings representing the IP addresses.
 `srcport` and `dstport` are integers representing the transport layer ports.
+The parameter `dir` should be either `"original"`, `"reply"` or `"both"`.
+In case of `"both"` returns 4 values corresponding to the counters of the directions `"original"` and `"reply"` respectively.
 
 Contrary to connections passing through the INPUT and OUTPUT chains, the ones passing through FORWARD chain will have distinct pairs of source and destination address.
 
@@ -120,24 +120,19 @@ In such case, the output of the command `conntrack -L` should be:
   ipv4     2 udp      17 0 src=192.168.1.100 dst=8.8.8.8 sport=8080 dport=22 packets=1 bytes=76 src=8.8.8.8 dst=10.0.0.38 sport=22 dport=8080 packets=1 bytes=76 mark=0 use=2
 ```
 
-Moreover, the code below illustrates the result of `conn.find` in such case.
+Moreover, the code below illustrates the result of `traffic` in such case.
 
 ```lua
-local id1 = conn.find(4, "udp", "192.168.1.100", 8080, "8.8.8.8", 22)
-local id2 = conn.find(4, "udp", "10.0.0.38", 8080, "8.8.8.8", 22)
-local id3 = conn.find(4, "udp", "8.8.8.8", 22, "10.0.0.38", 8080)
-local id4 = conn.find(4, "udp", "8.8.8.8", 22, "192.168.1.100", 8080)
+local p1, b1 = nf.traffic(4, "udp", "192.168.1.100", 8080, "8.8.8.8", 22, 'original')
+local p2, b2 = nf.traffic(4, "udp", "10.0.0.38", 8080, "8.8.8.8", 22, 'original')
+local p3, b3 = nf.traffic(4, "udp", "8.8.8.8", 22, "10.0.0.38", 8080, 'reply')
+local p4, b4 = nf.traffic(4, "udp", "8.8.8.8", 22, "192.168.1.100", 8080, 'reply')
 
-assert(id1 == id3)
-assert(id2 == nil)
-assert(id4 == nil)
+assert(p1 == p3)
+assert(b1 == b3)
+assert(p2 == nil)
+assert(p4 == nil)
 ```
-
-### `packets, bytes = conn.traffic(id, dir)`
-
-Returns the numbers of packets and the number of bytes of the given connection defined by `id`.
-The connection `id` can be retrieved by either [`packet:connid`](#id--packetconnid) or [`conn.find`](#id--connfindfamily-protocol-srcaddr-srcport-dstaddr-dstport).
-The parameter `dir` should be either `"original"` or `"reply"`.
 
 ## Packet
 

@@ -40,49 +40,31 @@ driver.test('conn connid', conntest, [[
 	end
 ]])
 
-driver.test('conn find', conntest, [[
-	local first = true
-	function f(pkt)
-		local ip, tcp = util.iptcp(pkt)
-		local id = conn.find(4, 'tcp', util.toip(ip.src),
-			tcp.sport, util.toip(ip.dst), tcp.dport)
-
-		if first then
-			first = false
-			assert(id == nil)
-		else
-			assert(id == pkt:connid())
-		end
-
-		return true
-	end
-]])
-
-driver.test('conn find not found', conntest, [[
+driver.test('conn traffic not found', conntest, [[
 	function f(pkt)
 		local ip, tcp = util.iptcp(pkt)
 		-- src and dst port swapped
-		local ok, err = conn.find(4, 'tcp', util.toip(ip.src),
-			tcp.dport, util.toip(ip.dst), tcp.sport)
+		local ok, err = conn.traffic(4, 'tcp', util.toip(ip.src),
+			tcp.dport, util.toip(ip.dst), tcp.sport, 'original')
 		assert(ok == nil)
 		assert(err == 'connid entry not found')
 		return true
 	end
 ]])
 
-driver.test('conn find invalid arg', conntest, [[
+driver.test('conn traffic invalid arg', conntest, [[
 	function f(pkt)
 		local ip, tcp = util.iptcp(pkt)
 		local args = {4, 'tcp', util.toip(ip.src), tcp.sport,
-			util.toip(ip.dst), tcp.dport}
+			util.toip(ip.dst), tcp.dport, 'original'}
 
 		function check(msg, arg, v)
 			local finalargs = {table.unpack(args)}
 			finalargs[arg] = v
 			local finalmsg = string.format(
-				"bad argument #%d to 'conn.find' (%s)",
+				"bad argument #%d to 'conn.traffic' (%s)",
 				arg, msg)
-			local ok, err = pcall(conn.find,
+			local ok, err = pcall(conn.traffic,
 				table.unpack(finalargs))
 			assert(ok == false)
 			print(err, finalmsg)
@@ -106,41 +88,42 @@ driver.test('conn find invalid arg', conntest, [[
 			check('invalid port', i, -1)
 			check('invalid port', i, 65536)
 		end
+		check("invalid option 'xxx'", 7, 'xxx')
 
 		return true
 	end
 ]])
 
 driver.test('conn traffic', conntest, string.format([[
+	local first = true
 	local svaddr = %q
 
 	local packets = {original = 0, reply = 0}
 	local bytes = {original = 0, reply = 0}
 
 	function f(pkt)
-		local ip = util.iptcp(pkt)
-		local dir = util.toip(ip.dst) == svaddr and 'original' or 'reply'
+		local ip, tcp = util.iptcp(pkt)
+		local src, dst = util.toip(ip.src), util.toip(ip.dst)
+		local sport, dport = tcp.sport, tcp.dport
+		local dir = dst == svaddr and 'original' or 'reply'
 		packets[dir] = packets[dir] + 1
 		bytes[dir] = bytes[dir] + #pkt
 
-		local pkt, b = conn.traffic(pkt:connid(), dir)
-		assert(pkt == packets[dir])
-		assert(b == bytes[dir])
+		local pkt, b = conn.traffic(4, 'tcp', src, sport, dst, dport, dir)
+		if first then
+			first = false
+			assert(pkt == nil)
+			assert(b == 'connid entry not found')
+		else
+			assert(pkt == packets[dir])
+			assert(b == bytes[dir])
+			local po, bo, pr, br = conn.traffic(4, 'tcp', src, sport, dst, dport, "both")
+			assert(packets.original == po)
+			assert(packets.reply == pr)
+			assert(bytes.original == bo)
+			assert(bytes.reply == br)
+		end
 
 		return true
 	end
 ]], network.svaddr))
-
-driver.test('conn traffic invalid param', conntest, [[
-	function f(pkt)
-		local ok, err = pcall(conn.traffic, nil, 'original')
-		assert(ok == false)
-		assert(err == "bad argument #1 to 'conn.traffic' (invalid connid)")
-
-		local ok, err = pcall(conn.traffic, pkt:connid(), 'xxx')
-		assert(ok == false)
-		assert(err == "bad argument #2 to 'conn.traffic' (invalid option 'xxx')")
-
-		return true
-	end
-]])

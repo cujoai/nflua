@@ -33,10 +33,9 @@
 #include "states.h"
 #include "xt_lua.h"
 
-static int luaconn_find(lua_State *L)
+struct nf_conn *nflua_findconnid(lua_State *L)
 {
 	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
-	struct nf_conn *conn;
 	struct nf_conntrack_tuple tuple;
 	struct nf_conntrack_tuple_hash *hash;
 	size_t slen, dlen;
@@ -84,45 +83,68 @@ static int luaconn_find(lua_State *L)
 
 	hash = nf_conntrack_find_get(sock_net(s->xt_lua->sock), KPI_CT_DEFAULT_ZONE, &tuple);
 
-	if (hash == NULL) {
-		lua_pushnil(L);
-		lua_pushstring(L, "connid entry not found");
-		return 2;
-	}
+	if (hash == NULL)
+		return NULL;
 
-	conn = nf_ct_tuplehash_to_ctrack(hash);
-	lua_pushlightuserdata(L, conn);
-
-	return 1;
+	return nf_ct_tuplehash_to_ctrack(hash);
 }
+EXPORT_SYMBOL(nflua_findconnid);
+
+void nflua_getdirection(lua_State *L, int arg, int *from, int *to)
+{
+        static const char *const directions[] = {
+                [IP_CT_DIR_ORIGINAL] = "original",
+                [IP_CT_DIR_REPLY] = "reply",
+                [IP_CT_DIR_MAX] = "both",
+                [IP_CT_DIR_MAX + 1] = NULL
+        };
+        int dir = luaL_checkoption(L, arg, NULL, directions);
+
+        if (dir == IP_CT_DIR_MAX) {
+                *to = IP_CT_DIR_REPLY;
+                *from = IP_CT_DIR_ORIGINAL;
+        } else {
+                *from = *to = dir;
+        }
+}
+EXPORT_SYMBOL(nflua_getdirection);
 
 static int luaconn_traffic(lua_State *L)
 {
-	static const char *const directions[] = {
-		[IP_CT_DIR_ORIGINAL] = "original",
-		[IP_CT_DIR_REPLY] = "reply",
-		[IP_CT_DIR_MAX] = NULL
-	};
-	struct nf_conn *ct = lua_touserdata(L, 1);
-	int dir = luaL_checkoption(L, 2, NULL, directions);
+	struct nf_conn *ct;
+	const char *msg = NULL;
 	const struct nf_conn_counter *counters;
+	int ret = 0;
+	int to, from, i;
 
-	luaL_argcheck(L, ct != NULL, 1, "invalid connid");
-
-	if ((counters = kpi_nf_conn_acct_find(ct)) == NULL) {
-		lua_pushnil(L);
-		lua_pushstring(L, "counters not found");
-		return 2;
+	nflua_getdirection(L, 7, &from, &to);
+	if ((ct = nflua_findconnid(L)) == NULL) {
+		msg = "connid entry not found";
+		goto err;
 	}
 
-	lua_pushinteger(L, atomic64_read(&counters[dir].packets));
-	lua_pushinteger(L, atomic64_read(&counters[dir].bytes));
+	if ((counters = kpi_nf_conn_acct_find(ct)) == NULL) {
+		msg = "counters not found";
+		goto err;
+	}
 
-	return 2;
+	for (i = from; i <= to; i++) {
+		lua_pushinteger(L, atomic64_read(&counters[i].packets));
+		lua_pushinteger(L, atomic64_read(&counters[i].bytes));
+		ret += 2;
+	}
+	goto out;
+err:
+	ret = 2;
+	lua_pushnil(L);
+	lua_pushstring(L, msg);
+out:
+	if (ct)
+		nf_ct_put(ct);
+	return ret;
 }
 
 static const luaL_Reg luaconn_lib[] = {
-	{"find", luaconn_find},
 	{"traffic", luaconn_traffic},
 	{NULL, NULL}
 };
