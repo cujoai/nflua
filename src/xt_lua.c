@@ -518,7 +518,7 @@ int nflua_connid(lua_State *L)
 		return luaL_error(L, "couldn't get packet context");
 
 	conn = nf_ct_get(ctx->skb, &info);
-	lua_pushlightuserdata(L, conn);
+	lua_pushinteger(L, (lua_Integer)conn);
 
 	return 1;
 }
