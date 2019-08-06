@@ -18,3 +18,6 @@
 	path = lib/lunatik-tests
 	url = https://github.com/getCUJO/lunatik-tests.git
 	branch = apfigueiredo_62
+[submodule "lib/luapuma"]
+	path = lib/luapuma
+	url = https://github.com/getCUJO/luapuma.git
