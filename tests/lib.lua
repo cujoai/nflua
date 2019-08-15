@@ -232,7 +232,7 @@ driver.test('control.execute', function()
 	local code = string.format('print(%q)', bigstring)
 	local ok, err = s:execute('st1', code)
 	assert(ok == nil)
-	assert(err == 'Operation not permitted')
+	assert(err == 'Invalid argument')
 end)
 
 driver.test('control.list', function()

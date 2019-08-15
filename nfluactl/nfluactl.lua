@@ -45,8 +45,9 @@ end
 
 local function run(cmd, ...)
 	local s = nflua.control()
-	ccall(s[cmd], s, ...)
 	local r, err
+	repeat r, err = s[cmd](s, ...) until err ~= 'pending'
+	check(r, err)
 	repeat r, err = s:receive() until err ~= 'pending'
 	check(r, err)
 	s:close()

@@ -36,10 +36,12 @@ network.cleanup()
 util.silentexec(rmmodule)
 util.silentexec(loadmodule)
 
-local function receiveall(s)
-	local ret
-	repeat ret = {s:receive()} until ret[2] ~= 'pending'
-	return table.unpack(ret)
+local function run(s, cmd, ...)
+	local ok, err
+	repeat ok, err = s[cmd](s, ...) until ok or err ~= 'pending'
+	if not ok then return ok, err end
+	repeat ok, err = s:receive() until ok or err ~= 'pending'
+	return ok, err
 end
 
 function driver.datareceive(s)
@@ -49,8 +51,7 @@ function driver.datareceive(s)
 end
 
 function driver.run(s, cmd, ...)
-	assert(s[cmd](s, ...))
-	return assert(receiveall(s))
+	return assert(run(s, cmd, ...))
 end
 
 function driver.test(name, f, ...)
@@ -68,8 +69,7 @@ function driver.matchdmesg(n, str)
 end
 
 function driver.failrun(s, msg, cmd, ...)
-	assert(s[cmd](s, ...))
-	local ok, err = receiveall(s)
+	local ok, err = run(s, cmd, ...)
 	assert(ok == nil)
 	assert(err == 'operation could not be completed')
 	driver.matchdmesg(3, msg)

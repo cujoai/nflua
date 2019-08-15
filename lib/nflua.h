@@ -25,6 +25,7 @@
 
 enum nflua_control_state {
     NFLUA_LINK_READY,
+    NFLUA_SENDING_REQUEST,
     NFLUA_PENDING_REPLY,
     NFLUA_RECEIVING_REPLY,
     NFLUA_PROTOCOL_OUTOFSYNC,
@@ -41,6 +42,7 @@ struct nflua_control {
     int fd;
     uint32_t pid;
     uint32_t seqnum;
+    int currfrag;
     enum nflua_control_state state;
     uint8_t buffer[NFLUA_PAYLOAD_MAXSIZE];
 };
@@ -82,7 +84,7 @@ int nflua_control_create(struct nflua_control *ctrl, struct nflua_nl_state *);
 int nflua_control_destroy(struct nflua_control *ctrl, const char *name);
 
 int nflua_control_execute(struct nflua_control *ctrl, const char *name,
-        const char *payload, size_t len, const char *scriptname);
+        const char *scriptname, const char *payload, size_t total);
 
 int nflua_control_list(struct nflua_control *ctrl);
 

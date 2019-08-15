@@ -71,6 +71,7 @@ Returns the port ID number of control socket `control`.
 Returns a string that defines the current state of control socket `control`, as described below:
 
 * `"ready"`: socket can be used to send commands.
+* `"sending"`: socket shall be used to send the remaining of the current command.
 * `"waiting"`: socket shall be used to start receiving a reply.
 * `"receiving"`: socket shall be used to receive the remains of a reply.
 * `"failed"`: socket shall be closed due to faulty communication using the underlying protocol.
@@ -93,6 +94,8 @@ After sending the command successfully, the code must call [`control:receive`](#
 
 Sends command using socket `control` to NFLua kernel module to execute the Lua code in string `chunk` in state with name `state`.
 `scriptname` is a string used to represent the name of the script file in error messages; it must have less than [`nflua.statenamemaxsize`](#nfluastatenamemaxsize) characters.
+This function should be called multiple times with the same arguments until there are no more fragments to be sent.
+Returns `nil` and `"pending"` if there are still fragments to be sent; returns `true` once finished sending the whole chunk.
 After sending the command successfully, the code must call [`control:receive`](#result--controlreceive) to obtain the actual result before sending the another command.
 
 ### `control:list()`
@@ -103,6 +106,8 @@ After sending the command successfully, the code must call [`control:receive`](#
 ### `result = control:receive()`
 
 Receives a command reply using socket `control`.
+This function should be called multiple times until there are no more fragments to be received.
+Returns `nil` and `"pending"` if there are still fragments to be received.
 The reply of commands sent by operations [`control:create`](#controlcreatename--maxalloc), [`control:destroy`](#controldestroystate), and [`control:execute`](#controlexecutestate-chunk--scriptname) return `true` in case of success.
 The reply of commands sent by operation [`control:list`](#controllist) return a sequence of tables with the following structures:
 

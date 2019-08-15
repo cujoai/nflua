@@ -191,75 +191,24 @@ int nflua_control_destroy(struct nflua_control *ctrl, const char *name)
     return ret;
 }
 
-static int send_fragments(struct nlmsghdr *nlh, int fd, const char *payload,
-        size_t len, size_t offset, size_t fragsize)
-{
-    struct iovec iov[3];
-    struct nflua_nl_fragment frag;
-    size_t plen, pkts = 1, missing = len - offset;
-    int sendret = -EPERM;
-
-    if (missing > fragsize)
-        pkts = missing / fragsize + ((missing % fragsize) != 0);
-
-    iov[0].iov_base = nlh;
-    iov[0].iov_len = NLMSG_HDRLEN;
-    iov[1].iov_base = &frag;
-    iov[1].iov_len = NLMSG_ALIGN(sizeof(struct nflua_nl_fragment));
-
-    frag.seq = 1;
-
-    for (size_t i = 0; i < pkts; i++) {
-        plen = MIN(len - offset, fragsize);
-
-        nlh->nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_fragment)) + plen;
-
-        if ((i + 1) == pkts)
-            nlh->nlmsg_flags |= NFLM_F_DONE;
-
-        frag.offset = offset;
-
-        iov[2].iov_base = (void *)(payload + offset);
-        iov[2].iov_len = plen;
-
-        if ((sendret = sendcmd(fd, iov, 3)) < 0)
-            return sendret;
-
-        offset += plen;
-        frag.seq++;
-    }
-
-    return sendret;
-}
-
-int nflua_control_execute(struct nflua_control *ctrl, const char *name,
-        const char *payload, size_t len, const char *script)
+static int send_execute_head(struct nflua_control *ctrl, const char *name,
+        const char *script, const char *payload, size_t len, size_t total)
 {
     struct nlmsghdr nlh;
     struct nflua_nl_script cmd;
     struct iovec iov[3];
-    size_t offset;
-    int ret;
 
-    if (ctrl->state != NFLUA_LINK_READY || name == NULL ||
-            payload == NULL || script == NULL ||
-            len == 0 || len > NFLUA_SCRIPT_MAXSIZE) {
-        return -EPERM;
-    }
-
+    nlh.nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_script)) + len;
     nlh.nlmsg_type = NFLMSG_EXECUTE;
+    nlh.nlmsg_flags = NFLM_F_REQUEST | NFLM_F_INIT |
+            (total > len ? NFLM_F_MULTI : NFLM_F_DONE);
     nlh.nlmsg_seq = ++(ctrl->seqnum);
     nlh.nlmsg_pid = ctrl->pid;
-    nlh.nlmsg_flags = NFLM_F_REQUEST | NFLM_F_INIT;
-
-    offset = MIN(len, NFLUA_SCRIPT_FRAG_SIZE);
-    nlh.nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_script)) + offset;
-    nlh.nlmsg_flags |= (offset < len) ? NFLM_F_MULTI : NFLM_F_DONE;
 
     memset(&cmd, 0, sizeof(struct nflua_nl_script));
     memcpy(cmd.name, name, strnlen(name, NFLUA_NAME_MAXSIZE));
     memcpy(cmd.script, script, strnlen(script, NFLUA_SCRIPTNAME_MAXSIZE));
-    cmd.total = len;
+    cmd.total = total;
     cmd.frag.seq = 0;
     cmd.frag.offset = 0;
 
@@ -268,21 +217,75 @@ int nflua_control_execute(struct nflua_control *ctrl, const char *name,
     iov[1].iov_base = &cmd;
     iov[1].iov_len = NLMSG_ALIGN(sizeof(struct nflua_nl_script));
     iov[2].iov_base = (void *)payload;
-    iov[2].iov_len = offset;
+    iov[2].iov_len = len;
 
-    if ((ret = sendcmd(ctrl->fd, iov, 3)) < 0)
-        return ret;
+    return sendcmd(ctrl->fd, iov, 3);
+}
 
-    if (offset < len) {
-        nlh.nlmsg_flags &= ~(NFLM_F_INIT);
-        ret = send_fragments(&nlh, ctrl->fd, payload, len, offset,
-                NFLUA_SCRIPT_FRAG_SIZE);
+static int send_execute_frag(struct nflua_control *ctrl, const char *payload,
+        size_t offset, size_t len, int final)
+{
+    struct nlmsghdr nlh;
+    struct nflua_nl_fragment frag;
+    struct iovec iov[3];
+
+    nlh.nlmsg_len = NLMSG_SPACE(sizeof(struct nflua_nl_fragment)) + len;
+    nlh.nlmsg_type = NFLMSG_EXECUTE;
+    nlh.nlmsg_flags = NFLM_F_REQUEST | NFLM_F_MULTI | (final ? NFLM_F_DONE : 0);
+    nlh.nlmsg_seq = ctrl->seqnum;
+    nlh.nlmsg_pid = ctrl->pid;
+
+    frag.seq = ctrl->currfrag + 1;
+    frag.offset = offset;
+
+    iov[0].iov_base = &nlh;
+    iov[0].iov_len = NLMSG_HDRLEN;
+    iov[1].iov_base = &frag;
+    iov[1].iov_len = NLMSG_ALIGN(sizeof(struct nflua_nl_fragment));
+    iov[2].iov_base = (void *)(payload + offset);
+    iov[2].iov_len = len;
+
+    return sendcmd(ctrl->fd, iov, 3);
+}
+
+int nflua_control_execute(struct nflua_control *ctrl, const char *name,
+        const char *script, const char *payload, size_t total)
+{
+    size_t hlen, flen, offset;
+    int final, ret;
+
+    if (name == NULL || payload == NULL || script == NULL || total == 0 ||
+        total > NFLUA_SCRIPT_MAXSIZE) {
+        return -EINVAL;
     }
 
-    if (ret >= 0)
-        ctrl->state = NFLUA_PENDING_REPLY;
+    hlen = MIN(total, NFLUA_SCRIPT_FRAG_SIZE);
 
-    return ret;
+    switch (ctrl->state) {
+    case NFLUA_LINK_READY:
+        ret = send_execute_head(ctrl, name, script, payload, hlen, total);
+        if (ret < 0)
+            return ret;
+        ctrl->currfrag = 0;
+        ctrl->state = total > NFLUA_SCRIPT_FRAG_SIZE ? NFLUA_SENDING_REQUEST :
+                NFLUA_PENDING_REPLY;
+        break;
+    case NFLUA_SENDING_REQUEST:
+        offset = hlen + ctrl->currfrag * NFLUA_SCRIPT_FRAG_SIZE;
+        flen = MIN(total - offset, NFLUA_SCRIPT_FRAG_SIZE);
+        final = offset + flen >= total;
+        ret = send_execute_frag(ctrl, payload, offset, flen, final);
+        if (ret < 0)
+            return ret;
+        ctrl->currfrag++;
+        if (final)
+            ctrl->state = NFLUA_PENDING_REPLY;
+        break;
+    default:
+        return -EPERM;
+    }
+
+    return ctrl->state == NFLUA_SENDING_REQUEST;
 }
 
 int nflua_control_list(struct nflua_control *ctrl)

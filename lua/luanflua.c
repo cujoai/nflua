@@ -146,6 +146,7 @@ static int lcontrol_getstate(lua_State *L)
 {
 	static const char *tostr[] = {
 		[NFLUA_LINK_READY] = "ready",
+		[NFLUA_SENDING_REQUEST] = "sending",
 		[NFLUA_PENDING_REPLY] = "waiting",
 		[NFLUA_RECEIVING_REPLY] = "receiving",
 		[NFLUA_PROTOCOL_OUTOFSYNC] = "failed",
@@ -193,9 +194,11 @@ static int lcontrol_execute(lua_State *L)
 	size_t len;
 	const char *payload = luaL_checklstring(L, 3, &len);
 	const char *scriptname = luaL_optstring(L, 4, payload);
+	int status = nflua_control_execute(&c->ctrl, name, scriptname,
+		payload, len);
 
-	return pushioresult(L,
-	    nflua_control_execute(&c->ctrl, name, payload, len, scriptname));
+	if (status > 0) return pusherrmsg(L, "pending");
+	return pushioresult(L, status);
 }
 
 static int lcontrol_list(lua_State *L)
