@@ -72,16 +72,15 @@ Otherwise, this function has no effect.
 
 ## Conntrack
 
-### `packets, bytes [, packets, bytes] = nf.traffic(family, protocol, srcaddr, srcport, dstaddr, dstport, dir)`
+### `id = conn.find(family, protocol, srcaddr, srcport, dstaddr, dstport)`
 
-Returns the numbers of packets and the number of bytes of a given connection.
+Returns an intenger that represents the ID of the connection specified, similar to [`packet:connid`](#id--packetconnid).
+Returns nil and an error message if it can't find the connection ID.
 
 `family` is either 4 or 6.
 `protocol` is either `'tcp'` or `'udp'`.
 `srcaddr` and `dstaddr` are the dotted-notation strings representing the IP addresses.
 `srcport` and `dstport` are integers representing the transport layer ports.
-The parameter `dir` should be either `"original"`, `"reply"` or `"both"`.
-In case of `"both"` returns 4 values corresponding to the counters of the directions `"original"` and `"reply"` respectively.
 
 Contrary to connections passing through the INPUT and OUTPUT chains, the ones passing through FORWARD chain will have distinct pairs of source and destination address.
 
@@ -133,6 +132,14 @@ assert(b1 == b3)
 assert(p2 == nil)
 assert(p4 == nil)
 ```
+
+### `packets, bytes [, packets, bytes] = conn.traffic(family, protocol, srcaddr, srcport, dstaddr, dstport, dir)`
+
+Returns the numbers of packets and the number of bytes of a given connection.
+
+The parameters `family`, `protocol`, `srcaddr`, `dstaddr`, `srcport` and `dstport` are the same as in [`conn.find`](#id--connfindfamily-protocol-srcaddr-srcport-dstaddr-dstport).
+The parameter `dir` should be either `"original"`, `"reply"` or `"both"`.
+In case of `"both"` returns 4 values corresponding to the counters of the directions `"original"` and `"reply"` respectively.
 
 ## Packet
 

@@ -21,7 +21,7 @@
 
 struct nf_conn;
 struct lua_State;
-struct nf_conn *nflua_findconnid(lua_State *L);
+struct nf_conn *nflua_findconn(lua_State *L);
 void nflua_getdirection(lua_State *L, int arg, int *from, int *to);
 
 #endif
