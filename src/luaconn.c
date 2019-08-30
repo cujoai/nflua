@@ -33,7 +33,7 @@
 #include "states.h"
 #include "xt_lua.h"
 
-struct nf_conn *nflua_findconnid(lua_State *L)
+struct nf_conn *nflua_findconn(lua_State *L)
 {
 	struct nflua_state *s = luaU_getenv(L, struct nflua_state);
 	struct nf_conntrack_tuple tuple;
@@ -88,7 +88,22 @@ struct nf_conn *nflua_findconnid(lua_State *L)
 
 	return nf_ct_tuplehash_to_ctrack(hash);
 }
-EXPORT_SYMBOL(nflua_findconnid);
+EXPORT_SYMBOL(nflua_findconn);
+
+static int luaconn_find(lua_State *L)
+{
+	struct nf_conn *ct = nflua_findconn(L);
+
+	if (ct == NULL) {
+		lua_pushnil(L);
+		lua_pushstring(L, "connid entry not found");
+		return 2;
+	}
+
+	nf_ct_put(ct);
+	lua_pushinteger(L, (lua_Integer)ct);
+	return 1;
+}
 
 void nflua_getdirection(lua_State *L, int arg, int *from, int *to)
 {
@@ -118,7 +133,7 @@ static int luaconn_traffic(lua_State *L)
 	int to, from, i;
 
 	nflua_getdirection(L, 7, &from, &to);
-	if ((ct = nflua_findconnid(L)) == NULL) {
+	if ((ct = nflua_findconn(L)) == NULL) {
 		msg = "connid entry not found";
 		goto err;
 	}
@@ -145,6 +160,7 @@ out:
 }
 
 static const luaL_Reg luaconn_lib[] = {
+	{"find", luaconn_find},
 	{"traffic", luaconn_traffic},
 	{NULL, NULL}
 };
