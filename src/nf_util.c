@@ -45,28 +45,42 @@ bool nf_util_init(void)
 
 #include "nf_util.h"
 
+/*
+ * IPv6 support in nf_util is not
+ * adapted to older kernels.
+ */
+#if LINUX_VERSION_CODE > KERNEL_VERSION(2,6,36)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,1,0)
+#if IS_ENABLED(CONFIG_IPV6)
+#define USE_IPV6
+#endif
+#elif defined(CONFIG_IPV6)
+#define USE_IPV6
+#endif
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,4,0)
 #define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
 #define __ip_route_me_harder(skb) \
 	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC))
 
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 #define __ip6_route_me_harder(skb) \
 	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb))
-#endif /* CONFIG_IPV6 */
+#endif /* USE_IPV6 */
 #else
 #define __dst_output(skb) (dst_output(skb))
 #define __ip_route_me_harder(skb) (ip_route_me_harder(skb, RTN_UNSPEC))
 
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 #define __ip6_route_me_harder(skb) (ip6_route_me_harder(skb))
-#endif /* CONFIG_IPV6 */
+#endif /* USE_IPV6 */
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,7,0)
 #define __IP_INC_STATS IP_INC_STATS_BH
 #define __IP_ADD_STATS IP_ADD_STATS_BH
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 #define __IP6_INC_STATS IP6_INC_STATS_BH
 #define __IP6_ADD_STATS IP6_ADD_STATS_BH
 #endif
@@ -80,7 +94,7 @@ bool nf_util_init(void)
 	} while (0)
 #endif
 
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
@@ -362,7 +376,7 @@ static int ipv6_forward_finish(struct sk_buff *skb)
 
 	return __dst_output(skb);
 }
-#endif /* IS_ENABLED(CONFIG_IPV6) */
+#endif /* USE_IPV6 */
 
 static int tcp_ipv4_reply(struct sk_buff *oldskb,
 		          struct xt_action_param *par,
@@ -468,7 +482,11 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 #endif
 		goto free_nskb;
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,38)
 	niph->ttl	= ip4_dst_hoplimit(skb_dst(nskb));
+#else
+	niph->ttl	= dst_metric(skb_dst(nskb), RTAX_HOPLIMIT);
+#endif
 
 	/* "Never happens" */
 	if (nskb->len > dst_mtu(skb_dst(nskb)))
@@ -492,7 +510,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb,
 int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	      unsigned char *msg, size_t len)
 {
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 	if (oldskb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_reply(oldskb, par, msg, len);
 #endif
@@ -588,7 +606,7 @@ static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 struct sk_buff *tcp_payload(struct sk_buff *skb,
                             unsigned char *payload, size_t len)
 {
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_payload(skb, payload, len);
 #endif
@@ -667,7 +685,7 @@ static int ipv4_forward_finish(struct sk_buff *skb)
 
 int tcp_send(struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
 		return ipv6_forward_finish(skb);
 #endif
@@ -676,7 +694,7 @@ int tcp_send(struct sk_buff *skb)
 
 int tcp_payload_length(const struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
 		return tcp_ipv6_payload_length(skb);
 #endif
@@ -685,9 +703,9 @@ int tcp_payload_length(const struct sk_buff *skb)
 
 int route_me_harder(struct sk_buff *skb)
 {
-#if IS_ENABLED(CONFIG_IPV6)
+#ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
 		return __ip6_route_me_harder(skb);
-#endif /* CONFIG_IPV6 */
+#endif /* USE_IPV6 */
 	return __ip_route_me_harder(skb);
 }
