@@ -23,10 +23,6 @@
 
 #define XT_LUA_FUNC_SIZE	(1024)
 
-#ifndef NETLINK_NFLUA
-#error "NETLINK_NFLUA is not defined"
-#endif
-
 #ifndef XT_LUA_MEM_LIMIT
 #define XT_LUA_MEM_LIMIT        (32 * 1024 * 1024)
 #endif

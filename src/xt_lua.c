@@ -61,6 +61,10 @@
 #define NFLUA_SETPAUSE	100
 #endif /* NFLUA_SETPAUSE */
 
+#ifndef NETLINK_NFLUA
+#error "NETLINK_NFLUA is not defined"
+#endif
+
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
 static inline u32 skb_mac_header_len(const struct sk_buff *skb)
 {
