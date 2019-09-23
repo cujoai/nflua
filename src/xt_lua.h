@@ -23,10 +23,6 @@
 
 #define XT_LUA_FUNC_SIZE	(1024)
 
-#ifndef NETLINK_NFLUA
-#error "NETLINK_NFLUA is not defined"
-#endif
-
 #ifndef XT_LUA_MEM_LIMIT
 #define XT_LUA_MEM_LIMIT        (32 * 1024 * 1024)
 #endif
@@ -39,5 +35,12 @@ struct xt_lua_mtinfo {
 	char func[XT_LUA_FUNC_SIZE];
 	__u8 flags;
 };
+
+#ifdef _KERNEL
+struct nf_conn;
+struct lua_State;
+struct nf_conn *nflua_findconnid(lua_State *L);
+void nflua_getdirection(lua_State *L, int arg, int *from, int *to);
+#endif /* _KERNEL */
 
 #endif
