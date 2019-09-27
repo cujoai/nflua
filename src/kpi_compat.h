@@ -140,8 +140,10 @@ int kpi_forward_finish_gso(struct sk_buff *skb);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,10,0)
 #define kpi_xt_hooknum		xt_hooknum
+#define kpi_xt_net		xt_net
 #else
 #define kpi_xt_hooknum(par)	par->hooknum
+#define kpi_xt_net(par)		par->net
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,11,0)

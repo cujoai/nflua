@@ -23,6 +23,8 @@
 
 #include <linux/netfilter/x_tables.h>
 #include <net/netns/generic.h>
+#include <net/netfilter/ipv4/nf_reject.h>
+#include <net/netfilter/ipv6/nf_reject.h>
 
 #include <lua.h>
 
@@ -70,6 +72,20 @@ static int nflua_mt_checkentry(const struct xt_mtchk_param *par)
 
 	info->state = s;
 	return 0;
+}
+
+static void nflua_tcpreject(struct sk_buff *skb, const struct xt_action_param *par)
+{
+	switch(ip_hdr(skb)->version) {
+	case 4:
+		nf_send_reset(kpi_xt_net(par), skb, kpi_xt_hooknum(par));
+		break;
+	case 6:
+		nf_send_reset6(kpi_xt_net(par), skb, kpi_xt_hooknum(par));
+		break;
+	default:
+		break;
+	}
 }
 
 enum mode {
@@ -180,8 +196,14 @@ static union call_result nflua_call(struct sk_buff *skb,
 			pr_warn("invalid match return");
 		break;
 	case NFLUA_TARGET:
-		if (lua_isstring(L, -1))
-			r.tg = string_to_tg(lua_tostring(L, -1));
+		if (lua_isstring(L, -1)) {
+			const char *s = lua_tostring(L, -1);
+			if (strcmp("tcp-reject", s) == 0) {
+				nflua_tcpreject(skb, par);
+				r.tg = NF_DROP;
+			} else
+				r.tg = string_to_tg(s);
+		}
 		break;
 	}
 

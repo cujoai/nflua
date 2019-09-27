@@ -65,6 +65,8 @@ To load NFLua and its dependencies:
 
 ```bash
 sudo modprobe nf_conntrack
+sudo modprobe nf_reject_ipv4
+sudo modprobe nf_reject_ipv6
 sudo insmod ./deps/lunatik/lunatik.ko
 sudo insmod ./deps/luabase64/luabase64.ko
 sudo insmod ./deps/lua-memory/lua-memory.ko

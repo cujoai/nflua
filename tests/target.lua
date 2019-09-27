@@ -124,3 +124,13 @@ driver.test('target veredict repeat-steal', function()
 	util.assertexec(drop)
 	network.asserttraffic()
 end)
+
+driver.test('target veredict tcp reject', function ()
+	driver.setup('st', [[
+		function f(pkt)
+			return 'tcp-reject'
+		end
+	]])
+	util.assertexec(rule)
+	network.asserttraffic''
+end)
