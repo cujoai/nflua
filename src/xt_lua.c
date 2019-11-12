@@ -309,6 +309,7 @@ static int nflua_netlink(lua_State *L)
 static int nflua_skb_send(lua_State *L)
 {
 	struct sk_buff *nskb, **lskb = tolskbuff(L);
+	struct dst_entry *dst;
 	size_t len;
 	unsigned char *payload;
 
@@ -329,6 +330,12 @@ static int nflua_skb_send(lua_State *L)
 		nskb = *lskb;
 	}
 	*lskb = NULL;
+
+	dst = skb_dst(nskb);
+	if (unlikely(!dst || !dst->dev || !dev_net(dst->dev))) {
+		kfree_skb(nskb);
+		luaL_error(L, "unable to route packet (device gone?)");
+	}
 
 	if (route_me_harder(nskb)) {
 		kfree_skb(nskb);
