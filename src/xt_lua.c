@@ -77,9 +77,7 @@ static inline u32 skb_mac_header_len(const struct sk_buff *skb)
 #endif
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Pedro Caldas Tammela <pctammela@getcujo.com>");
-MODULE_AUTHOR("Lourival Vieira Neto <lourival.neto@getcujo.com>");
-MODULE_AUTHOR("Iruatã Souza <iru@getcujo.com>");
+MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
 

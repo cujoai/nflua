@@ -29,7 +29,7 @@
 #include "luautil.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("CUJO <dev@getcujo.com>");
+MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
 MODULE_DESCRIPTION("Lua module for conntrack utilities");
 
 struct nf_conn *nflua_findconnid(lua_State *L)
