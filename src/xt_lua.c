@@ -19,6 +19,7 @@
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
 #include <linux/ratelimit.h>
 #include <linux/module.h>
+#include <linux/moduleparam.h>
 #include <linux/slab.h>
 #include <linux/printk.h>
 #include <linux/version.h>
@@ -31,6 +32,8 @@
 #include <net/ip.h>
 #include <net/sock.h>
 #include <net/netns/generic.h>
+#include <net/netlink.h>
+#include <net/genetlink.h>
 
 #include <linux/proc_fs.h>
 #include <linux/seq_file.h>
@@ -81,6 +84,9 @@ MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
 
+static int netlink_family=NETLINK_NFLUA;
+module_param(netlink_family,int,0660);
+
 #define NFLUA_SOCK "nflua_sock"
 
 static int xt_lua_net_id __read_mostly;
@@ -111,6 +117,10 @@ struct nftimer_ctx {
        struct timer_list timer;
        struct xt_lua_net *xt_lua;
 };
+
+static struct genl_family genl_nflua_family;
+
+static struct net *gennet;
 
 static void nflua_destroy(const struct xt_mtdtor_param *par)
 {
@@ -289,6 +299,56 @@ static int nflua_netlink(lua_State *L)
 		case ECONNREFUSED:
 			return luaL_error(L,
 				"connection refused: Rabid shut down?");
+		default:
+			return luaL_error(L, "error code %d", err);
+		}
+	}
+
+	lua_pushinteger(L, (lua_Integer) size);
+	return 1;
+}
+
+static int nflua_genetlink(lua_State *L)
+{
+	size_t size;
+	const char *payload = luaL_checklstring(L, 1, &size);
+	int pid = luaL_checkinteger(L, 2);
+	int err;
+	struct sk_buff *skb;
+	struct sock *sock;
+	void *msg_head;
+
+	luaU_getregval(L, NFLUA_SOCK, &sock);
+	if (sock == NULL)
+		return luaL_error(L, "invalid netlink socket");
+
+	skb = genlmsg_new(size, GFP_KERNEL);
+	if (skb == NULL) {
+		return luaL_error(L, "insufficient memory");
+	}
+
+	msg_head = genlmsg_put(skb, 0, 1, &genl_nflua_family, NLMSG_DONE, GENL_NFLUA_MSG);
+	if (msg_head == NULL) {
+		kfree_skb(skb);
+		return luaL_error(L, "message too long");
+	}
+
+	err = nla_put_string(skb, GENL_NFLUA_MSG, payload);
+	if (err != 0) {
+		kfree_skb(skb);
+		return luaL_error(L, "message too long");
+	}
+
+	genlmsg_end(skb, msg_head);
+
+	err = genlmsg_unicast(gennet, skb, pid);
+	if (err != 0) {
+		switch (-err) {
+		case EAGAIN:
+			return luaL_error(L, "socket buffer full: Userspace busy?");
+		case ECONNREFUSED:
+			return luaL_error(L,
+					"connection refused: Userspace shut down?");
 		default:
 			return luaL_error(L, "error code %d", err);
 		}
@@ -588,6 +648,7 @@ out:
 static const luaL_Reg nflua_lib[] = {
 	{"reply", nflua_reply},
 	{"netlink", nflua_netlink},
+	{"genetlink", nflua_genetlink},
 	{"time", nflua_time},
 	{"getpacket", nflua_getpacket},
 	{"connid", nflua_connid},
@@ -671,6 +732,61 @@ out:
 	spin_unlock_bh(&xt_lua->lock);
 }
 
+static int genl_nflua_rx_msg(struct sk_buff* skb, struct genl_info* info)
+{
+	struct net *net = sock_net(skb->sk);
+	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
+	const char *script;
+	const char *name;
+	int len;
+	int namelen;
+	struct nlattr *na;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
+	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
+#else
+		if (!capable(CAP_NET_ADMIN))
+#endif
+		{
+			pr_err("operation not permitted");
+			return -EPERM;
+		}
+
+	if (!info->attrs[GENL_NFLUA_ATTR_MSG]) {
+		printk(KERN_ERR "empty message from %d!!\n",
+				info->snd_portid);
+		printk(KERN_ERR "%p\n", info->attrs[GENL_NFLUA_ATTR_MSG]);
+		return -EINVAL;
+	}
+
+	script = (char*)nla_data(info->attrs[GENL_NFLUA_ATTR_MSG]);
+	name = script;
+	na = info->attrs[GENL_NFLUA_ATTR_MSG];
+	len = na->nla_len - NLA_HDRLEN;
+	namelen = strnlen(name, len);
+
+	if (namelen != len) {
+		script += namelen + 1;
+		len -= namelen + 1;
+	}
+
+	gennet = genl_info_net(info);
+
+	spin_lock_bh(&xt_lua->lock);
+	if (xt_lua->L == NULL) {
+		pr_err("invalid lua state");
+		goto out;
+	}
+
+	if (nflua_dostring(xt_lua->L, script, len, name) != 0) {
+		pr_err("%s\n", lua_tostring(xt_lua->L, -1));
+		lua_pop(xt_lua->L, 1); /* error */
+	}
+	out:
+	spin_unlock_bh(&xt_lua->lock);
+	return 0;
+}
+
 static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
 	struct xt_lua_net *xt_lua = ud;
@@ -695,10 +811,15 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 static int __net_init xt_lua_net_init(struct net *net)
 {
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
-	struct sock *sock;
+	struct sock *sock = NULL;
+	int ret;
+	lua_State *L;
 
 	unsigned int groups = 0;
 	void (*input)(struct sk_buff *skb) = nflua_input;
+
+	/* 16 == Generic netlink */
+	if (netlink_family != NETLINK_GENERIC) {
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
 	struct netlink_kernel_cfg cfg = {
@@ -706,8 +827,6 @@ static int __net_init xt_lua_net_init(struct net *net)
 		.input = input,
 	};
 #endif
-
-	lua_State *L;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
 	sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
@@ -719,6 +838,20 @@ static int __net_init xt_lua_net_init(struct net *net)
 #endif
 	if (sock == NULL)
 		return -ENOMEM;
+	} else {
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	ret = genl_register_family(&genl_nflua_family);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
+	ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops);
+#else
+	ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops);
+#endif
+
+	if (ret != 0)
+		return -ENOMEM;
+
+	}
 
 	spin_lock_init(&xt_lua->lock);
 
@@ -766,6 +899,8 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 
 	if (sock != NULL)
 		netlink_kernel_release(sock);
+
+	genl_unregister_family(&genl_nflua_family);
 }
 
 static struct pernet_operations xt_lua_net_ops = {
@@ -773,6 +908,28 @@ static struct pernet_operations xt_lua_net_ops = {
 	.exit = xt_lua_net_exit,
 	.id   = &xt_lua_net_id,
 	.size = sizeof(struct xt_lua_net),
+};
+
+static const struct genl_ops genl_nflua_ops[] = {
+	{
+		.cmd = GENL_NFLUA_MSG,
+		.policy = genl_nflua_policy,
+		.doit = genl_nflua_rx_msg,
+		.dumpit = NULL,
+	},
+};
+
+static struct genl_family genl_nflua_family = {
+	.hdrsize = 0,
+	.name = GENL_NFLUA_FAMILY_NAME,
+	.version = 1,
+	.maxattr = GENL_NFLUA_ATTR_MAX,
+	.netnsok = false,
+	.module = THIS_MODULE,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	.ops = genl_nflua_ops,
+	.n_ops = ARRAY_SIZE(genl_nflua_ops),
+#endif
 };
 
 static int __init xt_lua_init(void)
