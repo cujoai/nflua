@@ -32,7 +32,6 @@
 #include <net/ip.h>
 #include <net/sock.h>
 #include <net/netns/generic.h>
-#include <net/netlink.h>
 #include <net/genetlink.h>
 
 #include <linux/proc_fs.h>
@@ -84,8 +83,8 @@ MODULE_AUTHOR("CUJO LLC <opensource@cujo.com>");
 
 MODULE_DESCRIPTION("Netfilter Lua module");
 
-static int netlink_family=NETLINK_NFLUA;
-module_param(netlink_family,int,0660);
+static int netlink_family = NETLINK_NFLUA;
+module_param(netlink_family, int, 0660);
 
 #define NFLUA_SOCK "nflua_sock"
 
@@ -121,6 +120,13 @@ struct nftimer_ctx {
 static struct genl_family genl_nflua_family;
 
 static struct net *gennet;
+
+static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX+1] = {
+	[GENL_NFLUA_ATTR_MSG] = {
+		.type = NLA_STRING,
+		.len = GENL_NFLUA_ATTR_MSG_MAX
+	},
+};
 
 static void nflua_destroy(const struct xt_mtdtor_param *par)
 {
@@ -318,11 +324,7 @@ static int nflua_genetlink(lua_State *L)
 	struct sock *sock;
 	void *msg_head;
 
-	luaU_getregval(L, NFLUA_SOCK, &sock);
-	if (sock == NULL)
-		return luaL_error(L, "invalid netlink socket");
-
-	skb = genlmsg_new(size, GFP_KERNEL);
+	skb = genlmsg_new(size, GFP_ATOMIC);
 	if (skb == NULL) {
 		return luaL_error(L, "insufficient memory");
 	}
@@ -330,10 +332,10 @@ static int nflua_genetlink(lua_State *L)
 	msg_head = genlmsg_put(skb, 0, 1, &genl_nflua_family, NLMSG_DONE, GENL_NFLUA_MSG);
 	if (msg_head == NULL) {
 		kfree_skb(skb);
-		return luaL_error(L, "message too long");
+		return luaL_error(L, "message init failed");
 	}
 
-	err = nla_put_string(skb, GENL_NFLUA_MSG, payload);
+	err = nla_put(skb, GENL_NFLUA_MSG, size, payload);
 	if (err != 0) {
 		kfree_skb(skb);
 		return luaL_error(L, "message too long");
@@ -348,7 +350,7 @@ static int nflua_genetlink(lua_State *L)
 			return luaL_error(L, "socket buffer full: Userspace busy?");
 		case ECONNREFUSED:
 			return luaL_error(L,
-					"connection refused: Userspace shut down?");
+				"connection refused: Userspace shut down?");
 		default:
 			return luaL_error(L, "error code %d", err);
 		}
@@ -732,7 +734,7 @@ out:
 	spin_unlock_bh(&xt_lua->lock);
 }
 
-static int genl_nflua_rx_msg(struct sk_buff* skb, struct genl_info* info)
+static int genl_nflua_rx_msg(struct sk_buff *skb, struct genl_info *info)
 {
 	struct net *net = sock_net(skb->sk);
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
@@ -740,29 +742,25 @@ static int genl_nflua_rx_msg(struct sk_buff* skb, struct genl_info* info)
 	const char *name;
 	int len;
 	int namelen;
-	struct nlattr *na;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
 	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 #else
-		if (!capable(CAP_NET_ADMIN))
+	if (!capable(CAP_NET_ADMIN))
 #endif
-		{
-			pr_err("operation not permitted");
-			return -EPERM;
-		}
+	{
+		pr_err("operation not permitted");
+		return -EPERM;
+	}
 
 	if (!info->attrs[GENL_NFLUA_ATTR_MSG]) {
-		printk(KERN_ERR "empty message from %d!!\n",
-				info->snd_portid);
-		printk(KERN_ERR "%p\n", info->attrs[GENL_NFLUA_ATTR_MSG]);
+		pr_err("empty message from %d\n",	info->snd_portid);
 		return -EINVAL;
 	}
 
-	script = (char*)nla_data(info->attrs[GENL_NFLUA_ATTR_MSG]);
+	script = (const char *)nla_data(info->attrs[GENL_NFLUA_ATTR_MSG]);
 	name = script;
-	na = info->attrs[GENL_NFLUA_ATTR_MSG];
-	len = na->nla_len - NLA_HDRLEN;
+	len = nla_len(info->attrs[GENL_NFLUA_ATTR_MSG]);
 	namelen = strnlen(name, len);
 
 	if (namelen != len) {
@@ -770,7 +768,8 @@ static int genl_nflua_rx_msg(struct sk_buff* skb, struct genl_info* info)
 		len -= namelen + 1;
 	}
 
-	gennet = genl_info_net(info);
+	if (gennet == NULL)
+		gennet = genl_info_net(info);
 
 	spin_lock_bh(&xt_lua->lock);
 	if (xt_lua->L == NULL) {
@@ -782,7 +781,7 @@ static int genl_nflua_rx_msg(struct sk_buff* skb, struct genl_info* info)
 		pr_err("%s\n", lua_tostring(xt_lua->L, -1));
 		lua_pop(xt_lua->L, 1); /* error */
 	}
-	out:
+out:
 	spin_unlock_bh(&xt_lua->lock);
 	return 0;
 }
@@ -818,39 +817,36 @@ static int __net_init xt_lua_net_init(struct net *net)
 	unsigned int groups = 0;
 	void (*input)(struct sk_buff *skb) = nflua_input;
 
-	/* 16 == Generic netlink */
-	if (netlink_family != NETLINK_GENERIC) {
+	if (netlink_family == NETLINK_GENERIC) {
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	struct netlink_kernel_cfg cfg = {
-		.groups = groups,
-		.input = input,
-	};
-#endif
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+		ret = genl_register_family(&genl_nflua_family);
+	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
+		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops);
+	#else
+		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops);
+	#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
-	sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-	sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE, &cfg);
-#else
-	sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
-	                             NULL, THIS_MODULE);
-#endif
-	if (sock == NULL)
-		return -ENOMEM;
+		if (ret != 0)
+			return -EPFNOSUPPORT;
 	} else {
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+		struct netlink_kernel_cfg cfg = {
+			.groups = groups,
+			.input = input,
+		};
+	#endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-	ret = genl_register_family(&genl_nflua_family);
-#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-	ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops);
-#else
-	ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops);
-#endif
-
-	if (ret != 0)
-		return -ENOMEM;
-
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+		sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
+	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+		sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE, &cfg);
+	#else
+		sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
+									 NULL, THIS_MODULE);
+	#endif
+		if (sock == NULL)
+			return -ENOMEM;
 	}
 
 	spin_lock_init(&xt_lua->lock);
@@ -913,18 +909,23 @@ static struct pernet_operations xt_lua_net_ops = {
 static const struct genl_ops genl_nflua_ops[] = {
 	{
 		.cmd = GENL_NFLUA_MSG,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0)
 		.policy = genl_nflua_policy,
+#endif
 		.doit = genl_nflua_rx_msg,
-		.dumpit = NULL,
 	},
 };
 
 static struct genl_family genl_nflua_family = {
+	.id = GENL_ID_GENERATE,
 	.hdrsize = 0,
 	.name = GENL_NFLUA_FAMILY_NAME,
 	.version = 1,
 	.maxattr = GENL_NFLUA_ATTR_MAX,
 	.netnsok = false,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
+	.policy = genl_nflua_policy,
+#endif
 	.module = THIS_MODULE,
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
 	.ops = genl_nflua_ops,

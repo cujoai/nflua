@@ -20,9 +20,6 @@
 #define _XT_LUA_H
 
 #include <linux/types.h>
-#ifdef __KERNEL__
-#include <net/genetlink.h>
-#endif
 
 #define XT_LUA_FUNC_SIZE	(1024)
 
@@ -53,18 +50,5 @@ enum genl_nflua_attrs {
 	__GENL_NFLUA_ATTR__MAX,
 };
 #define GENL_NFLUA_ATTR_MAX (__GENL_NFLUA_ATTR__MAX - 1)
-
-#ifdef __KERNEL__
-static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX+1] = {
-		[GENL_NFLUA_ATTR_MSG] = {
-				.type = NLA_STRING,
-#ifdef __KERNEL__
-				.len = GENL_NFLUA_ATTR_MSG_MAX
-#else
-				.maxlen = GENL_NFLUA_ATTR_MSG_MAX
-#endif
-		},
-};
-#endif
 
 #endif
