@@ -123,7 +123,7 @@ static struct net *gennet;
 
 static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX+1] = {
 	[GENL_NFLUA_ATTR_MSG] = {
-		.type = NLA_STRING,
+		.type = NLA_BINARY,
 		.len = GENL_NFLUA_ATTR_MSG_MAX
 	},
 };
@@ -897,6 +897,9 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 		netlink_kernel_release(sock);
 
 	genl_unregister_family(&genl_nflua_family);
+
+	if (gennet != NULL)
+		gennet = NULL;
 }
 
 static struct pernet_operations xt_lua_net_ops = {
