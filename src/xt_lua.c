@@ -754,7 +754,7 @@ static int genl_nflua_rx_msg(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (!info->attrs[GENL_NFLUA_ATTR_MSG]) {
-		pr_err("empty message from %d\n",	info->snd_portid);
+		pr_err("empty message from %d\n", info->snd_portid);
 		return -EINVAL;
 	}
 
@@ -898,8 +898,7 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 
 	genl_unregister_family(&genl_nflua_family);
 
-	if (gennet != NULL)
-		gennet = NULL;
+	gennet = NULL;
 }
 
 static struct pernet_operations xt_lua_net_ops = {
