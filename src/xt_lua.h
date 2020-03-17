@@ -36,4 +36,19 @@ struct xt_lua_mtinfo {
 	__u8 flags;
 };
 
+#define GENL_NFLUA_FAMILY_NAME		"NFLUA"
+#define GENL_NFLUA_ATTR_MSG_MAX		65535
+
+enum genl_nflua_messages {
+	GENL_NFLUA_MSG_UNSPEC,		/* element 0 is unused*/
+	GENL_NFLUA_MSG,
+};
+
+enum genl_nflua_attrs {
+	GENL_NFLUA_ATTR_UNSPEC,		/* element 0 is unused*/
+	GENL_NFLUA_ATTR_MSG,
+	__GENL_NFLUA_ATTR__MAX,
+};
+#define GENL_NFLUA_ATTR_MAX (__GENL_NFLUA_ATTR__MAX - 1)
+
 #endif
