@@ -754,7 +754,7 @@ static int genl_nflua_rx_msg(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (!info->attrs[GENL_NFLUA_ATTR_MSG]) {
-		pr_err("empty message from %d\n", info->snd_portid);
+		pr_err("empty message\n");
 		return -EINVAL;
 	}
 
@@ -807,6 +807,33 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 	return nptr;
 }
 
+static struct genl_ops genl_nflua_ops[] = {
+	{
+		.cmd = GENL_NFLUA_MSG,
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0)
+		.policy = genl_nflua_policy,
+#endif
+		.doit = genl_nflua_rx_msg,
+	},
+};
+
+static struct genl_family genl_nflua_family = {
+	.id = GENL_ID_GENERATE,
+	.hdrsize = 0,
+	.name = GENL_NFLUA_FAMILY_NAME,
+	.version = 1,
+	.maxattr = GENL_NFLUA_ATTR_MAX,
+	.netnsok = false,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
+	.policy = genl_nflua_policy,
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	.module = THIS_MODULE,
+	.ops = genl_nflua_ops,
+	.n_ops = ARRAY_SIZE(genl_nflua_ops),
+#endif
+};
+
 static int __net_init xt_lua_net_init(struct net *net)
 {
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
@@ -822,9 +849,9 @@ static int __net_init xt_lua_net_init(struct net *net)
 	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
 		ret = genl_register_family(&genl_nflua_family);
 	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops);
+		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops[0], ARRAY_SIZE(genl_nflua_ops));
 	#else
-		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops);
+		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops[0]);
 	#endif
 
 		if (ret != 0)
@@ -906,33 +933,6 @@ static struct pernet_operations xt_lua_net_ops = {
 	.exit = xt_lua_net_exit,
 	.id   = &xt_lua_net_id,
 	.size = sizeof(struct xt_lua_net),
-};
-
-static const struct genl_ops genl_nflua_ops[] = {
-	{
-		.cmd = GENL_NFLUA_MSG,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0)
-		.policy = genl_nflua_policy,
-#endif
-		.doit = genl_nflua_rx_msg,
-	},
-};
-
-static struct genl_family genl_nflua_family = {
-	.id = GENL_ID_GENERATE,
-	.hdrsize = 0,
-	.name = GENL_NFLUA_FAMILY_NAME,
-	.version = 1,
-	.maxattr = GENL_NFLUA_ATTR_MAX,
-	.netnsok = false,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
-	.policy = genl_nflua_policy,
-#endif
-	.module = THIS_MODULE,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
-	.ops = genl_nflua_ops,
-	.n_ops = ARRAY_SIZE(genl_nflua_ops),
-#endif
 };
 
 static int __init xt_lua_init(void)
