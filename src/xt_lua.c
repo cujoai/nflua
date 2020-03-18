@@ -849,7 +849,7 @@ static int __net_init xt_lua_net_init(struct net *net)
 	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
 		ret = genl_register_family(&genl_nflua_family);
 	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops[0]);
+		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops[0], ARRAY_SIZE(genl_nflua_ops));
 	#else
 		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops[0]);
 	#endif
