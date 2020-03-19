@@ -827,8 +827,10 @@ static struct genl_family genl_nflua_family = {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
 	.policy = genl_nflua_policy,
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
 	.module = THIS_MODULE,
+#endif
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
 	.ops = genl_nflua_ops,
 	.n_ops = ARRAY_SIZE(genl_nflua_ops),
 #endif
@@ -846,7 +848,7 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	if (netlink_family == NETLINK_GENERIC) {
 
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,9,0)
+	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
 		ret = genl_register_family(&genl_nflua_family);
 	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
 		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops[0], ARRAY_SIZE(genl_nflua_ops));
