@@ -818,7 +818,9 @@ static struct genl_ops genl_nflua_ops[] = {
 };
 
 static struct genl_family genl_nflua_family = {
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
 	.id = GENL_ID_GENERATE,
+#endif
 	.hdrsize = 0,
 	.name = GENL_NFLUA_FAMILY_NAME,
 	.version = 1,
