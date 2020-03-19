@@ -336,6 +336,10 @@ static int nflua_skb_send(lua_State *L)
 		kfree_skb(nskb);
 		luaL_error(L, "unable to route packet (device gone?)");
 	}
+	if (unlikely(!netif_carrier_ok(dst->dev))) {
+		kfree_skb(nskb);
+		luaL_error(L, "unable to route packet, destination link down");
+	}
 
 	if (route_me_harder(nskb)) {
 		kfree_skb(nskb);
