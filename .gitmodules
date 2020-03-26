@@ -1,23 +1,15 @@
-[submodule "lib/luajson"]
-	path = lib/luajson
-	url = https://github.com/getCUJO/luajson.git
-	branch = master
-[submodule "lib/lunatik"]
-	path = lib/lunatik
-	url = https://github.com/getCUJO/ports-lunatik.git
-	branch = master
 [submodule "lib/luadata"]
 	path = lib/luadata
-	url = https://github.com/getCUJO/ports-luadata.git
-	branch = master
-[submodule "lib/luabase64"]
-	path = lib/luabase64
-	url = https://github.com/getCUJO/luabase64.git
-	branch = master
+	url = git@github.com:cujoai/luadata.git
+[submodule "lib/luajson"]
+	path = lib/luajson
+	url = git@github.com:cujoai/luajson.git
+[submodule "lib/lunatik"]
+	path = lib/lunatik
+	url = git@github.com:cujoai/lunatik.git
 [submodule "lib/lunatik-tests"]
 	path = lib/lunatik-tests
-	url = https://github.com/getCUJO/lunatik-tests.git
-	branch = apfigueiredo_62
-[submodule "lib/luapuma"]
-	path = lib/luapuma
-	url = https://github.com/getCUJO/luapuma.git
+	url = git@github.com:cujoai/lunatik-tests.git
+[submodule "lib/luabase64"]
+	path = lib/luabase64
+	url = git@github.com:cujoai/luabase64.git
