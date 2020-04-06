@@ -57,25 +57,25 @@
 #include "luautil.h"
 
 #ifndef NFLUA_SETPAUSE
-#define NFLUA_SETPAUSE	100
+#define NFLUA_SETPAUSE 100
 #endif /* NFLUA_SETPAUSE */
 
 #ifndef NETLINK_NFLUA
 #define NETLINK_NFLUA NETLINK_GENERIC
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 13, 0)
 static inline u32 skb_mac_header_len(const struct sk_buff *skb)
 {
 	return skb->network_header - skb->mac_header;
 }
 #endif
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 #define kpi_nf_conn_acct_find(ct) \
 	(nf_conn_acct_find(ct) == NULL ? NULL : nf_conn_acct_find(ct)->counter)
 #else
-#define kpi_nf_conn_acct_find(ct)      nf_conn_acct_find(ct)
+#define kpi_nf_conn_acct_find(ct) nf_conn_acct_find(ct)
 #endif
 
 MODULE_LICENSE("GPL");
@@ -113,19 +113,17 @@ struct nflua_ctx {
 };
 
 struct nftimer_ctx {
-       struct timer_list timer;
-       struct xt_lua_net *xt_lua;
+	struct timer_list timer;
+	struct xt_lua_net *xt_lua;
 };
 
 static struct genl_family genl_nflua_family;
 
 static struct net *gennet;
 
-static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX+1] = {
-	[GENL_NFLUA_ATTR_MSG] = {
-		.type = NLA_BINARY,
-		.len = GENL_NFLUA_ATTR_MSG_MAX
-	},
+static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX + 1] = {
+	[GENL_NFLUA_ATTR_MSG] = { .type = NLA_BINARY,
+				  .len = GENL_NFLUA_ATTR_MSG_MAX },
 };
 
 static void nflua_destroy(const struct xt_mtdtor_param *par)
@@ -146,7 +144,7 @@ static int nflua_msghandler(lua_State *L)
 			return 1;
 		else
 			msg = lua_pushfstring(L, "(error object is a %s value)",
-				luaL_typename(L, 1));
+					      luaL_typename(L, 1));
 	}
 	luaL_traceback(L, L, msg, 1);
 	return 1;
@@ -174,15 +172,17 @@ static int nflua_domatch(lua_State *L)
 	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
 
 	if (lua_getglobal(L, info->func) != LUA_TFUNCTION)
-		return luaL_error(L, "couldn't find match function: %s\n", info->func);
+		return luaL_error(L, "couldn't find match function: %s\n",
+				  info->func);
 
 	if (skb_linearize(skb) != 0)
 		return luaL_error(L, "skb linearization failed.\n");
 
-	ctx->frame = ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
+	ctx->frame =
+		ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
 
-	error =  lua_pcall(L, 2, 1, 0);
+	error = lua_pcall(L, 2, 1, 0);
 
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
 	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
@@ -195,15 +195,18 @@ static int nflua_domatch(lua_State *L)
 
 static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
-	struct nflua_ctx ctx = {.skb = (struct sk_buff *) skb, .par = par,
-		.frame = LUA_NOREF, .packet = LUA_NOREF};
+	struct nflua_ctx ctx = { .skb = (struct sk_buff *)skb,
+				 .par = par,
+				 .frame = LUA_NOREF,
+				 .packet = LUA_NOREF };
 	struct xt_lua_net *xt_lua = xt_lua_pernet(xt_net(par));
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 	lua_State *L;
 	bool match = false;
 	int base;
 
-	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) && tcp_payload_length(skb) <= 0)
+	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) &&
+	    tcp_payload_length(skb) <= 0)
 		return match;
 
 	spin_lock(&xt_lua->lock);
@@ -215,14 +218,14 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 
 	base = lua_gettop(L);
 	lua_pushcfunction(L, nflua_domatch);
-	lua_pushlightuserdata(L, (void *) &ctx);
+	lua_pushlightuserdata(L, (void *)&ctx);
 
 	if (nflua_pcall(L, 1, 1)) {
 		pr_err("%s\n", lua_tostring(L, -1));
 		goto cleanup;
 	}
 
-	match = (bool) lua_toboolean(L, -1);
+	match = (bool)lua_toboolean(L, -1);
 
 cleanup:
 	ldata_unref(L, ctx.frame);
@@ -247,7 +250,7 @@ static int nflua_reply(lua_State *L)
 	type = (unsigned char *)luaL_checkstring(L, 1);
 	msg = (unsigned char *)luaL_checklstring(L, 2, &len);
 
-	switch(type[0]) {
+	switch (type[0]) {
 	case 't':
 		if (tcp_reply(ctx->skb, ctx->par, msg, len) != 0)
 			goto error;
@@ -267,9 +270,9 @@ error:
 #define nlmsg_unicast(sk, skb, portid) nlmsg_unicast((sk), (skb), (portid), 0)
 #endif
 
-#define nlmsg_send(sock, skb, pid, group) \
+#define nlmsg_send(sock, skb, pid, group)               \
 	((group == 0) ? nlmsg_unicast(sock, skb, pid) : \
-		nlmsg_multicast(sock, skb, pid, group, 0))
+			nlmsg_multicast(sock, skb, pid, group, 0))
 
 static int nflua_netlink(lua_State *L)
 {
@@ -303,14 +306,14 @@ static int nflua_netlink(lua_State *L)
 		case EAGAIN:
 			return luaL_error(L, "socket buffer full: Rabid busy?");
 		case ECONNREFUSED:
-			return luaL_error(L,
-				"connection refused: Rabid shut down?");
+			return luaL_error(
+				L, "connection refused: Rabid shut down?");
 		default:
 			return luaL_error(L, "error code %d", err);
 		}
 	}
 
-	lua_pushinteger(L, (lua_Integer) size);
+	lua_pushinteger(L, (lua_Integer)size);
 	return 1;
 }
 
@@ -328,7 +331,8 @@ static int nflua_genetlink(lua_State *L)
 		return luaL_error(L, "insufficient memory");
 	}
 
-	msg_head = genlmsg_put(skb, 0, 1, &genl_nflua_family, NLMSG_DONE, GENL_NFLUA_MSG);
+	msg_head = genlmsg_put(skb, 0, 1, &genl_nflua_family, NLMSG_DONE,
+			       GENL_NFLUA_MSG);
 	if (msg_head == NULL) {
 		kfree_skb(skb);
 		return luaL_error(L, "message init failed");
@@ -346,23 +350,24 @@ static int nflua_genetlink(lua_State *L)
 	if (err != 0) {
 		switch (-err) {
 		case EAGAIN:
-			return luaL_error(L, "socket buffer full: Userspace busy?");
+			return luaL_error(
+				L, "socket buffer full: Userspace busy?");
 		case ECONNREFUSED:
-			return luaL_error(L,
-				"connection refused: Userspace shut down?");
+			return luaL_error(
+				L, "connection refused: Userspace shut down?");
 		default:
 			return luaL_error(L, "error code %d", err);
 		}
 	}
 
-	lua_pushinteger(L, (lua_Integer) size);
+	lua_pushinteger(L, (lua_Integer)size);
 	return 1;
 }
 
-#define NFLUA_SKBUFF  "lskb"
-#define tolskbuff(L) ((struct sk_buff **) luaL_checkudata(L, 1, NFLUA_SKBUFF))
+#define NFLUA_SKBUFF "lskb"
+#define tolskbuff(L) ((struct sk_buff **)luaL_checkudata(L, 1, NFLUA_SKBUFF))
 #define lnewskbuff(L) \
-	((struct sk_buff **) lua_newuserdata(L, sizeof(struct sk_buff *)))
+	((struct sk_buff **)lua_newuserdata(L, sizeof(struct sk_buff *)))
 
 static int nflua_skb_send(lua_State *L)
 {
@@ -453,18 +458,17 @@ static int nflua_skb_tostring(lua_State *L)
 		lua_pushliteral(L, "packet closed");
 	} else {
 		lua_pushfstring(L,
-			"packet: { len:%d data_len:%d users:%d "
-			"cloned:%d dataref:%d frags:%d }",
-			skb->len,
-			skb->data_len,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,13,0)
-			refcount_read(&skb->users),
+				"packet: { len:%d data_len:%d users:%d "
+				"cloned:%d dataref:%d frags:%d }",
+				skb->len, skb->data_len,
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 13, 0)
+				refcount_read(&skb->users),
 #else
-			atomic_read(&skb->users),
+				atomic_read(&skb->users),
 #endif
-			skb->cloned,
-			atomic_read(&skb_shinfo(skb)->dataref),
-			skb_shinfo(skb)->nr_frags);
+				skb->cloned,
+				atomic_read(&skb_shinfo(skb)->dataref),
+				skb_shinfo(skb)->nr_frags);
 	}
 
 	return 1;
@@ -485,100 +489,96 @@ static int nflua_time(lua_State *L)
 
 static void __timeout_cb(struct nftimer_ctx *ctx)
 {
-       struct xt_lua_net *xt_lua = ctx->xt_lua;
-       int base;
+	struct xt_lua_net *xt_lua = ctx->xt_lua;
+	int base;
 
-       spin_lock(&xt_lua->lock);
-       if (xt_lua->L == NULL) {
-               pr_err("invalid lua state");
-               goto out2;
-       }
-       base = lua_gettop(xt_lua->L);
+	spin_lock(&xt_lua->lock);
+	if (xt_lua->L == NULL) {
+		pr_err("invalid lua state");
+		goto out2;
+	}
+	base = lua_gettop(xt_lua->L);
 
-       /*
+	/*
         * if we have already called ltimer_destroy for this timer,
         * the lua callback is going to be nil, so we just bail out.
         */
-       if (!luaU_getuvalue(xt_lua->L, ctx, LUA_TFUNCTION))
-               goto out;
+	if (!luaU_getuvalue(xt_lua->L, ctx, LUA_TFUNCTION))
+		goto out;
 
-       if (lua_pcall(xt_lua->L, 0, 0, 0) != 0) {
-               pr_warn("%s", lua_tostring(xt_lua->L, -1));
-               goto out;
-       }
+	if (lua_pcall(xt_lua->L, 0, 0, 0) != 0) {
+		pr_warn("%s", lua_tostring(xt_lua->L, -1));
+		goto out;
+	}
 
 out:
-       luaU_unregisterudata(xt_lua->L, ctx);
-       lua_settop(xt_lua->L, base);
+	luaU_unregisterudata(xt_lua->L, ctx);
+	lua_settop(xt_lua->L, base);
 out2:
-       spin_unlock(&xt_lua->lock);
+	spin_unlock(&xt_lua->lock);
 }
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
 static void timeout_cb(struct timer_list *t)
 {
-       struct nftimer_ctx *ctx = from_timer(ctx, t, timer);
-       __timeout_cb(ctx);
+	struct nftimer_ctx *ctx = from_timer(ctx, t, timer);
+	__timeout_cb(ctx);
 }
 #else
 static void timeout_cb(unsigned long data)
 {
-       __timeout_cb((struct nftimer_ctx *)data);
+	__timeout_cb((struct nftimer_ctx *)data);
 }
 #endif
 
 static int ltimer_create(lua_State *L)
 {
-       struct nftimer_ctx *ctx;
-       unsigned long msecs = luaL_checkinteger(L, 1);
+	struct nftimer_ctx *ctx;
+	unsigned long msecs = luaL_checkinteger(L, 1);
 
-       luaL_checktype(L, 2, LUA_TFUNCTION);
+	luaL_checktype(L, 2, LUA_TFUNCTION);
 
-       ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
-       ctx->xt_lua = luaU_getenv(L, struct xt_lua_net);
-       luaL_setmetatable(L, NFLUA_TIMER);
+	ctx = lua_newuserdata(L, sizeof(struct nftimer_ctx));
+	ctx->xt_lua = luaU_getenv(L, struct xt_lua_net);
+	luaL_setmetatable(L, NFLUA_TIMER);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,15,0)
-       timer_setup(&ctx->timer, timeout_cb, 0);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 15, 0)
+	timer_setup(&ctx->timer, timeout_cb, 0);
 #else
-       setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
+	setup_timer(&ctx->timer, timeout_cb, (unsigned long)ctx);
 #endif
-       if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
-               return luaL_error(L, "error setting timer");
+	if (mod_timer(&ctx->timer, jiffies + msecs_to_jiffies(msecs)))
+		return luaL_error(L, "error setting timer");
 
-       luaU_registerudata(L, -1, ctx); /* shouldn't gc context */
-       luaU_setuvalue(L, -1, 2); /* store callback */
+	luaU_registerudata(L, -1, ctx); /* shouldn't gc context */
+	luaU_setuvalue(L, -1, 2); /* store callback */
 
-       return 1;
+	return 1;
 }
 
 static int ltimer_destroy(lua_State *L)
 {
-       struct nftimer_ctx *ctx =
-               (struct nftimer_ctx *) luaL_checkudata(L, 1, NFLUA_TIMER);
-       int base = lua_gettop(L);
+	struct nftimer_ctx *ctx =
+		(struct nftimer_ctx *)luaL_checkudata(L, 1, NFLUA_TIMER);
+	int base = lua_gettop(L);
 
-       /* the timer callback has already cleaned the context up */
-       if (ctx == NULL)
-               return 0;
+	/* the timer callback has already cleaned the context up */
+	if (ctx == NULL)
+		return 0;
 
-       del_timer(&ctx->timer);
+	del_timer(&ctx->timer);
 
-       luaU_unregisterudata(L, ctx);
-       lua_settop(L, base);
-       return 0;
+	luaU_unregisterudata(L, ctx);
+	lua_settop(L, base);
+	return 0;
 }
 
-static const luaL_Reg timerlib[] = {
-       {"create", ltimer_create},
-       {"destroy", ltimer_destroy},
-       {NULL, NULL}
-};
+static const luaL_Reg timerlib[] = { { "create", ltimer_create },
+				     { "destroy", ltimer_destroy },
+				     { NULL, NULL } };
 
-static const luaL_Reg ltimer_ops[] = {
-	{"__gc", ltimer_destroy},
-	{NULL, NULL}
-};
+static const luaL_Reg ltimer_ops[] = { { "__gc", ltimer_destroy },
+				       { NULL, NULL } };
 
 int luaopen_timer(lua_State *L)
 {
@@ -661,25 +661,21 @@ out:
 	return ret;
 }
 
-static const luaL_Reg nflua_lib[] = {
-	{"reply", nflua_reply},
-	{"netlink", nflua_netlink},
-	{"genetlink", nflua_genetlink},
-	{"time", nflua_time},
-	{"getpacket", nflua_getpacket},
-	{"connid", nflua_connid},
-	{"hotdrop", nflua_hotdrop},
-	{"traffic", nflua_traffic},
-	{NULL, NULL}
-};
+static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
+				      { "netlink", nflua_netlink },
+				      { "genetlink", nflua_genetlink },
+				      { "time", nflua_time },
+				      { "getpacket", nflua_getpacket },
+				      { "connid", nflua_connid },
+				      { "hotdrop", nflua_hotdrop },
+				      { "traffic", nflua_traffic },
+				      { NULL, NULL } };
 
-static const luaL_Reg nflua_skb_ops[] = {
-	{"send", nflua_skb_send},
-	{"close", nflua_skb_free},
-	{"__gc", nflua_skb_free},
-	{"__tostring", nflua_skb_tostring},
-	{NULL, NULL}
-};
+static const luaL_Reg nflua_skb_ops[] = { { "send", nflua_skb_send },
+					  { "close", nflua_skb_free },
+					  { "__gc", nflua_skb_free },
+					  { "__tostring", nflua_skb_tostring },
+					  { NULL, NULL } };
 
 int luaopen_nf(lua_State *L)
 {
@@ -695,32 +691,30 @@ int luaopen_nf(lua_State *L)
 EXPORT_SYMBOL(luaopen_nf);
 
 static struct xt_match nflua_mt_reg __read_mostly = {
-	.name       = "lua",
-	.revision   = 0,
-	.family     = NFPROTO_UNSPEC,
-	.match      = nflua_match,
+	.name = "lua",
+	.revision = 0,
+	.family = NFPROTO_UNSPEC,
+	.match = nflua_match,
 	.checkentry = nflua_checkentry,
-	.destroy    = nflua_destroy,
-	.matchsize  = sizeof(struct xt_lua_mtinfo),
-	.me         = THIS_MODULE
+	.destroy = nflua_destroy,
+	.matchsize = sizeof(struct xt_lua_mtinfo),
+	.me = THIS_MODULE
 };
 
-#define nflua_dostring(L, b, s, n)	\
-	(luaL_loadbufferx(L, b, s, n, "t") ||	\
-	 nflua_pcall(L, 0, 0))
-
+#define nflua_dostring(L, b, s, n) \
+	(luaL_loadbufferx(L, b, s, n, "t") || nflua_pcall(L, 0, 0))
 
 static void nflua_input(struct sk_buff *skb)
 {
 	struct net *net = sock_net(skb->sk);
 	struct xt_lua_net *xt_lua = xt_lua_pernet(net);
 	struct nlmsghdr *nlh = nlmsg_hdr(skb);
-	const char *script = (const char *) nlmsg_data(nlh);
+	const char *script = (const char *)nlmsg_data(nlh);
 	const char *name = script;
 	int len = nlmsg_len(nlh);
 	int namelen = strnlen(name, len);
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
 	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 #else
 	if (!capable(CAP_NET_ADMIN))
@@ -757,7 +751,7 @@ static int genl_nflua_rx_msg(struct sk_buff *skb, struct genl_info *info)
 	int len;
 	int namelen;
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,8,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 8, 0)
 	if (!ns_capable(net->user_ns, CAP_NET_ADMIN))
 #else
 	if (!capable(CAP_NET_ADMIN))
@@ -813,7 +807,7 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 		kfree(ptr);
 	} else if (xt_lua->alloc - osize + nsize > XT_LUA_MEM_LIMIT) {
 		pr_warn_ratelimited("memory limit %d exceeded\n",
-		    XT_LUA_MEM_LIMIT);
+				    XT_LUA_MEM_LIMIT);
 	} else if ((nptr = krealloc(ptr, nsize, GFP_ATOMIC)) != NULL) {
 		xt_lua->alloc += nsize - osize;
 	}
@@ -824,7 +818,7 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 static struct genl_ops genl_nflua_ops[] = {
 	{
 		.cmd = GENL_NFLUA_MSG,
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,20,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 20, 0)
 		.policy = genl_nflua_policy,
 #endif
 		.doit = genl_nflua_rx_msg,
@@ -832,7 +826,7 @@ static struct genl_ops genl_nflua_ops[] = {
 };
 
 static struct genl_family genl_nflua_family = {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(4,10,0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 	.id = GENL_ID_GENERATE,
 #endif
 	.hdrsize = 0,
@@ -840,13 +834,13 @@ static struct genl_family genl_nflua_family = {
 	.version = 1,
 	.maxattr = GENL_NFLUA_ATTR_MAX,
 	.netnsok = false,
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4,20,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 20, 0)
 	.policy = genl_nflua_policy,
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,10,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
 	.module = THIS_MODULE,
 #endif
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 	.ops = genl_nflua_ops,
 	.n_ops = ARRAY_SIZE(genl_nflua_ops),
 #endif
@@ -860,36 +854,38 @@ static int __net_init xt_lua_net_init(struct net *net)
 	lua_State *L;
 
 	unsigned int groups = 0;
-	void (*input)(struct sk_buff *skb) = nflua_input;
+	void (*input)(struct sk_buff * skb) = nflua_input;
 
 	if (netlink_family == NETLINK_GENERIC) {
-
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,13,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 13, 0)
 		ret = genl_register_family(&genl_nflua_family);
-	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,11,0)
-		ret = genl_register_family_with_ops(&genl_nflua_family, &genl_nflua_ops[0], ARRAY_SIZE(genl_nflua_ops));
-	#else
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 11, 0)
+		ret = genl_register_family_with_ops(&genl_nflua_family,
+						    &genl_nflua_ops[0],
+						    ARRAY_SIZE(genl_nflua_ops));
+#else
 		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops[0]);
-	#endif
+#endif
 
 		if (ret != 0)
 			return -EPFNOSUPPORT;
 	} else {
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
 		struct netlink_kernel_cfg cfg = {
 			.groups = groups,
 			.input = input,
 		};
-	#endif
+#endif
 
-	#if LINUX_VERSION_CODE >= KERNEL_VERSION(3,7,0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 7, 0)
 		sock = netlink_kernel_create(net, NETLINK_NFLUA, &cfg);
-	#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3,6,0)
-		sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE, &cfg);
-	#else
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
+		sock = netlink_kernel_create(net, NETLINK_NFLUA, THIS_MODULE,
+					     &cfg);
+#else
 		sock = netlink_kernel_create(net, NETLINK_NFLUA, groups, input,
-									 NULL, THIS_MODULE);
-	#endif
+					     NULL, THIS_MODULE);
+#endif
 		if (sock == NULL)
 			return -ENOMEM;
 	}
@@ -949,7 +945,7 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 static struct pernet_operations xt_lua_net_ops = {
 	.init = xt_lua_net_init,
 	.exit = xt_lua_net_exit,
-	.id   = &xt_lua_net_id,
+	.id = &xt_lua_net_id,
 	.size = sizeof(struct xt_lua_net),
 };
 
