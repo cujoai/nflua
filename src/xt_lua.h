@@ -21,31 +21,29 @@
 
 #include <linux/types.h>
 
-#define XT_LUA_FUNC_SIZE	(1024)
+#define XT_LUA_FUNC_SIZE (1024)
 
 #ifndef XT_LUA_MEM_LIMIT
-#define XT_LUA_MEM_LIMIT        (32 * 1024 * 1024)
+#define XT_LUA_MEM_LIMIT (32 * 1024 * 1024)
 #endif
 
-enum {
-	XT_NFLUA_TCP_PAYLOAD = 0x01
-};
+enum { XT_NFLUA_TCP_PAYLOAD = 0x01 };
 
 struct xt_lua_mtinfo {
 	char func[XT_LUA_FUNC_SIZE];
 	__u8 flags;
 };
 
-#define GENL_NFLUA_FAMILY_NAME		"NFLUA"
-#define GENL_NFLUA_ATTR_MSG_MAX		65535
+#define GENL_NFLUA_FAMILY_NAME	"NFLUA"
+#define GENL_NFLUA_ATTR_MSG_MAX 65535
 
 enum genl_nflua_messages {
-	GENL_NFLUA_MSG_UNSPEC,		/* element 0 is unused*/
+	GENL_NFLUA_MSG_UNSPEC, /* element 0 is unused*/
 	GENL_NFLUA_MSG,
 };
 
 enum genl_nflua_attrs {
-	GENL_NFLUA_ATTR_UNSPEC,		/* element 0 is unused*/
+	GENL_NFLUA_ATTR_UNSPEC, /* element 0 is unused*/
 	GENL_NFLUA_ATTR_MSG,
 	__GENL_NFLUA_ATTR__MAX,
 };

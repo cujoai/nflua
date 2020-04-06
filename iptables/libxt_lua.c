@@ -23,33 +23,30 @@
 #include <xtables.h>
 #include <xt_lua.h>
 
-enum {
-	O_FUNCTION    = 0x02,
-	O_TCP_PAYLOAD = 0x04
-};
+enum { O_FUNCTION = 0x02, O_TCP_PAYLOAD = 0x04 };
 
 static void nflua_help(void)
 {
 	printf("Netfilter Lua\n"
-		"--tcp-payload\tmatch if tcp payload length is greater than zero\n"
-		"[!] --function\tmatch function\n");
+	       "--tcp-payload\tmatch if tcp payload length is greater than zero\n"
+	       "[!] --function\tmatch function\n");
 }
 
 static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
-			const void *entry, struct xt_entry_match **match)
+		       const void *entry, struct xt_entry_match **match)
 {
-	((void) argv);
-	((void) invert);
-	((void) flags);
-	((void) entry);
-	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) (*match)->data;
+	((void)argv);
+	((void)invert);
+	((void)flags);
+	((void)entry);
+	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)(*match)->data;
 
 	switch (c) {
 	case O_FUNCTION:
 		if (strlen(optarg) >= XT_LUA_FUNC_SIZE)
 			xtables_error(PARAMETER_PROBLEM,
-				"'--function' is too long (max: %u)",
-				XT_LUA_FUNC_SIZE - 1);
+				      "'--function' is too long (max: %u)",
+				      XT_LUA_FUNC_SIZE - 1);
 
 		strcpy(info->func, optarg);
 
@@ -72,29 +69,28 @@ static void nflua_check(unsigned int flags)
 }
 
 static const struct option nflua_opts[] = {
-	{.name = "function", .has_arg = 1, .val = O_FUNCTION},
-	{.name = "tcp-payload", .has_arg = 0, .val = O_TCP_PAYLOAD},
+	{ .name = "function", .has_arg = 1, .val = O_FUNCTION },
+	{ .name = "tcp-payload", .has_arg = 0, .val = O_TCP_PAYLOAD },
 	XT_GETOPT_TABLEEND,
 };
 
-static void
-nflua_print(const void *ip, const struct xt_entry_match *match, int numeric)
+static void nflua_print(const void *ip, const struct xt_entry_match *match,
+			int numeric)
 {
-	((void) ip);
-	((void) numeric);
-        struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
+	((void)ip);
+	((void)numeric);
+	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)match->data;
 
-        printf(" %s", info->func);
+	printf(" %s", info->func);
 
 	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
 		printf(" tcp-payload");
 }
 
-static void
-nflua_save(const void *ip, const struct xt_entry_match *match)
+static void nflua_save(const void *ip, const struct xt_entry_match *match)
 {
-	((void) ip);
-	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *) match->data;
+	((void)ip);
+	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)match->data;
 
 	printf(" --function %s", info->func);
 
@@ -103,18 +99,18 @@ nflua_save(const void *ip, const struct xt_entry_match *match)
 }
 
 static struct xtables_match nflua_mt_reg = {
-	.version	= XTABLES_VERSION,
-	.name		= "lua",
-	.revision	= 0,
-	.family		= NFPROTO_UNSPEC,
-	.size		= XT_ALIGN(sizeof(struct xt_lua_mtinfo)),
-	.userspacesize	= XT_ALIGN(sizeof(struct xt_lua_mtinfo)),
-	.help		= nflua_help,
-	.parse		= nflua_parse,
-	.final_check	= nflua_check,
-	.extra_opts	= nflua_opts,
-	.save		= nflua_save,
-	.print		= nflua_print,
+	.version = XTABLES_VERSION,
+	.name = "lua",
+	.revision = 0,
+	.family = NFPROTO_UNSPEC,
+	.size = XT_ALIGN(sizeof(struct xt_lua_mtinfo)),
+	.userspacesize = XT_ALIGN(sizeof(struct xt_lua_mtinfo)),
+	.help = nflua_help,
+	.parse = nflua_parse,
+	.final_check = nflua_check,
+	.extra_opts = nflua_opts,
+	.save = nflua_save,
+	.print = nflua_print,
 };
 
 static void _init(void)
