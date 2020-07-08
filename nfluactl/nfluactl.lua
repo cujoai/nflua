@@ -21,7 +21,7 @@ local socket = require'socket.core'
 local KERNEL_PORT = 0
 local NETLINK_NFLUA = 31
 
-function nfdofile(path)
+local function nfdofile(path)
 	assert(path ~= nil, 'path argument is mandatory')
 
 	local file = assert(io.open(path))
@@ -31,7 +31,7 @@ function nfdofile(path)
 	assert(socket.netlink(NETLINK_NFLUA):sendto(path .. '\0' .. code, KERNEL_PORT))
 end
 
-function printusage()
+local function printusage()
 	local lines = {
 		"usage: lua nfluaclt.lua [options] [script [args]]",
 		"Available options are:",
@@ -55,7 +55,7 @@ local options = {
 	end,
 }
 
-function handleoptions(...)
+local function handleoptions(...)
 	local i = 1
 	while select(i, ...) ~= nil do
 		local option = select(i, ...)
