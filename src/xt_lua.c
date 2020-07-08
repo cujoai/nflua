@@ -324,7 +324,7 @@ static int nflua_genetlink(lua_State *L)
 	struct sock *sock;
 	void *msg_head;
 
-	skb = genlmsg_new(size, GFP_ATOMIC);
+	skb = genlmsg_new(nla_total_size(size), GFP_ATOMIC);
 	if (skb == NULL) {
 		return luaL_error(L, "insufficient memory");
 	}
