@@ -321,7 +321,6 @@ static int nflua_genetlink(lua_State *L)
 	int pid = luaL_checkinteger(L, 2);
 	int err;
 	struct sk_buff *skb;
-	struct sock *sock;
 	void *msg_head;
 
 	skb = genlmsg_new(nla_total_size(size), GFP_ATOMIC);
@@ -605,7 +604,11 @@ int nflua_connid(lua_State *L)
 		return luaL_error(L, "couldn't get packet context");
 
 	conn = nf_ct_get(ctx->skb, &info);
-	lua_pushinteger(L, (lua_Integer)conn);
+
+	/* lua_Integer should always be at least as big as uintptr_t, but we
+	 * need the intermediate cast to avoid GCC warnings when it is bigger.
+	 */
+	lua_pushinteger(L, (lua_Integer)(uintptr_t)conn);
 
 	return 1;
 }

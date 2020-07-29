@@ -63,11 +63,12 @@ struct nf_conn *nflua_findconnid(lua_State *L)
 		derr = in6_pton(daddr, dlen, (u8 *) tuple.dst.u3.all, -1, &end);
 		break;
 	default:
-		return luaL_error(L, "unknown family");
+		return (struct nf_conn *)luaL_error(L, "unknown family");
 	}
 
 	if (!serr || !derr)
-		return luaL_error(L, "failed to convert address to binary");
+		return (struct nf_conn *)luaL_error(
+			L, "failed to convert address to binary");
 
 	tuple.dst.protonum = protonum;
 	tuple.src.u.all = sport;
