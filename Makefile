@@ -21,9 +21,6 @@ ifeq ($(BUILD_NF),1)
 ifndef KERNEL_HEADERS_DIR
 $(error KERNEL_HEADERS_DIR is undefined, but required!)
 endif
-ifndef KERNEL_ARCH
-$(error KERNEL_ARCH is undefined, but required! (Try $$(uname -m) for a host build.))
-endif
 endif
 
 .PHONY: modules iptables modules-install iptables-install tests-install
@@ -41,7 +38,6 @@ MODULE_MAKE_OPTS := \
 	-C "$(KERNEL_BUILD_DIR)" \
 	M="$(BUILD_DIR)" \
 	CROSS_COMPILE="$(KERNEL_BINUTILS_PREFIX)" \
-	ARCH=$(KERNEL_ARCH) \
 	NETLINK_NFLUA=$(NETLINK_NFLUA) \
 	CONFIG_NFLUA=m \
 	CONFIG_LUNATIK=m \
