@@ -19,7 +19,7 @@
 local socket = require'socket.core'
 
 local KERNEL_PORT = 0
-local NETLINK_NFLUA = 31
+local NETLINK_NFLUA = 16
 
 local function nfdofile(path)
 	assert(path ~= nil, 'path argument is mandatory')
@@ -28,7 +28,7 @@ local function nfdofile(path)
 	local code = assert(file:read('a'))
 	file:close()
 
-	assert(socket.netlink(NETLINK_NFLUA):sendto(path .. '\0' .. code, KERNEL_PORT))
+	assert(socket.netlink(NETLINK_NFLUA):sendtogennflua(path .. '\0' .. code, KERNEL_PORT))
 end
 
 local function printusage()
@@ -45,7 +45,7 @@ end
 local options = {
 	['-e'] = function(code)
 		assert(code ~= nil, 'code argument is mandatory')
-		assert(socket.netlink(NETLINK_NFLUA):sendto(code, KERNEL_PORT))
+		assert(socket.netlink(NETLINK_NFLUA):sendtogennflua(code, KERNEL_PORT))
 		return 1
 	end,
 	['-h'] = function()
