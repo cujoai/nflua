@@ -874,6 +874,15 @@ static int __net_init xt_lua_net_init(struct net *net)
 						    &genl_nflua_ops[0],
 						    ARRAY_SIZE(genl_nflua_ops));
 #else
+		ret = genl_register_family(&genl_nflua_family);
+
+		if (unlikely(ret < 0)) {
+			printk(KERN_ERR
+			       "cannot register generic netlink family: %d\n",
+			       ret);
+			return -EPFNOSUPPORT;
+		}
+
 		ret = genl_register_ops(&genl_nflua_family, &genl_nflua_ops[0]);
 #endif
 
