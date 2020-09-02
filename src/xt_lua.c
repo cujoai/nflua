@@ -89,6 +89,7 @@ module_param(netlink_family, int, 0660);
 #define NFLUA_SOCK "nflua_sock"
 
 static int xt_lua_net_id __read_mostly;
+static size_t total_alloc_mem = 0;
 struct xt_lua_net {
 	/* ABI relied on by luaconntrack: This must be the first element. */
 	struct net *net;
@@ -661,6 +662,13 @@ out:
 	return ret;
 }
 
+static int nflua_get_mem_info(lua_State *L)
+{
+	lua_pushinteger(L, (lua_Integer)total_alloc_mem);
+	lua_pushinteger(L, (lua_Integer)PAGE_SIZE);
+	return 2;
+}
+
 static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
 				      { "netlink", nflua_netlink },
 				      { "genetlink", nflua_genetlink },
@@ -669,6 +677,7 @@ static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
 				      { "connid", nflua_connid },
 				      { "hotdrop", nflua_hotdrop },
 				      { "traffic", nflua_traffic },
+				      { "get_mem_info", nflua_get_mem_info },
 				      { NULL, NULL } };
 
 static const luaL_Reg nflua_skb_ops[] = { { "send", nflua_skb_send },
@@ -812,6 +821,7 @@ static void *lua_alloc(void *ud, void *ptr, size_t osize, size_t nsize)
 		xt_lua->alloc += nsize - osize;
 	}
 
+	total_alloc_mem = xt_lua->alloc;
 	return nptr;
 }
 
