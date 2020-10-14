@@ -1,4 +1,4 @@
-_Copyright (C) 2017-2019  CUJO LLC_
+_Copyright (C) 2017-2020  CUJO LLC_
 
 _This program is free software; you can redistribute it and/or modify_
 _it under the terms of the GNU General Public License as published by_
@@ -25,8 +25,10 @@ Index
 - [`nf.netlink`](#size--nfnetlinkport-groups-payload)
 - [`nf.reply`](#nfreplytype-message)
 - [`nf.time`](#seconds-millis--nftime)
+- [`nf.get_mem_info`](#getmeminfo)
 - [`packet:close`](#packetclose)
 - [`packet:send`](#packetsendpayload)
+- [`Code walktrough`](#walkthrough)
 
 Contents
 --------
@@ -118,6 +120,10 @@ Sends a TCP reply with the string `message` as payload.
 
 Returns the number of seconds since UNIX epoch time (01/01/1970), followed by the number of milliseconds since this second.
 
+### `nf.get_mem_info()`
+
+Get lunatik memory statistics
+
 ### `packet:close()`
 
 Discards all resources of copied packet `packet`.
@@ -128,3 +134,52 @@ After this call no further operations can be performed on packet `packet`.
 Send the copied packet `packet` through the network and then closes it, thus it cannot be sent again.
 If `payload` is provided, the original packet payload is replaced by the contents of string `payload`.
 This function only works when you acquire the packet during a match in FORWARD chain.
+
+
+## `Code walktrough`
+
+### Packet flow in nflua using iptables match:
+Example syntax: iptables -I INPUT -p tcp -m tcp -m lua --function nf_test  
+Userspace support for iptables lua match is in iptables/libxt_lua.c
+
+```
+Register handler: xt_register_match(&nflua_mt_reg)
+ nflua_match() - Packet enters nflua
+ nflua_call()
+ nflua_docall()
+  - Two arguments given to lua-function 'nf_test'. Frame is ethernet header
+    with mac-addresses. packet is the full ip-packet.
+ nflua_call() - boolean true/false returned from lua function
+ nflua_match()
+  - return false or true. true will match to target given with -j option
+```
+
+### Packet flow in nflua using iptables target:
+Example syntax: iptables -I INPUT -p tcp -m tcp -j LUA --function nf_test  
+Userspace support for iptables LUA target is in iptables/libxt_LUA.c
+
+```
+Register handler: xt_register_target(&nflua_tg_reg)
+ nflua_target() - Packet enters nflua
+ nflua_call()
+ nflua_docall()
+  - Two arguments given to lua-function 'nf_test'. Frame is ethernet header
+    with mac-addresses. packet is the full ip-packet.
+ nflua_call() - string value returned from lua function
+ nflua_target()
+  - return string 'accept' which is mapped to netfilter verdict in string_to_tg()
+```
+
+### Netlink flow userspace -> kernel:
+```
+ Operations are registered in genl_nflua_ops.
+ genl_nflua_rx_msg(), receives messages to 'NFLUA' family name.
+  Lua code sent from userspace is executed in lunatik context.
+```
+
+### Netlink flow kernel -> userspace:
+```
+ Lunatik Lua scripts call nf.genetlink(...)
+ nflua_genetlink()
+  writes to generic netlink socket
+```
