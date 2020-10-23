@@ -91,6 +91,7 @@ module_param(netlink_family, int, 0660);
 
 static int xt_lua_net_id __read_mostly;
 static size_t total_alloc_mem = 0;
+static unsigned int total_elapsed_time_usec = 0;
 struct xt_lua_net {
 	/* ABI relied on by luaconntrack: This must be the first element. */
 	struct net *net;
@@ -167,10 +168,15 @@ static int nflua_msghandler(lua_State *L)
 static int nflua_pcall(lua_State *L, int nargs, int nresults)
 {
 	int status;
+	struct timeval start, stop;
 	int base = lua_gettop(L) - nargs;
 	lua_pushcfunction(L, nflua_msghandler);
 	lua_insert(L, base);
+	do_gettimeofday(&start);
 	status = lua_pcall(L, nargs, nresults, base);
+	do_gettimeofday(&stop);
+	total_elapsed_time_usec += (stop.tv_usec - start.tv_usec) +
+				   (stop.tv_sec - start.tv_sec) * USEC_PER_SEC;
 	lua_remove(L, base);
 	return status;
 }
@@ -207,6 +213,7 @@ static unsigned int string_to_tg(const char *s)
 
 static int nflua_docall(lua_State *L)
 {
+	struct timeval start, stop;
 	struct nflua_ctx *ctx = lua_touserdata(L, 1);
 	struct sk_buff *skb = ctx->skb;
 	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
@@ -225,8 +232,11 @@ static int nflua_docall(lua_State *L)
 	ctx->frame =
 		ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
-
+	do_gettimeofday(&start);
 	error = lua_pcall(L, 2, 1, 0);
+	do_gettimeofday(&stop);
+	total_elapsed_time_usec += (stop.tv_usec - start.tv_usec) +
+				   (stop.tv_sec - start.tv_sec) * USEC_PER_SEC;
 
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
 	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
@@ -750,11 +760,13 @@ out:
 	return ret;
 }
 
-static int nflua_get_mem_info(lua_State *L)
+static int nflua_get_cpu_mem_info(lua_State *L)
 {
 	lua_pushinteger(L, (lua_Integer)total_alloc_mem);
 	lua_pushinteger(L, (lua_Integer)PAGE_SIZE);
-	return 2;
+	lua_pushinteger(L, (lua_Integer)total_elapsed_time_usec);
+	total_elapsed_time_usec = 0;
+	return 3;
 }
 
 static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
@@ -765,7 +777,8 @@ static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
 				      { "connid", nflua_connid },
 				      { "hotdrop", nflua_hotdrop },
 				      { "traffic", nflua_traffic },
-				      { "get_mem_info", nflua_get_mem_info },
+				      { "get_cpu_mem_info",
+					nflua_get_cpu_mem_info },
 				      { NULL, NULL } };
 
 static const luaL_Reg nflua_skb_ops[] = { { "send", nflua_skb_send },
