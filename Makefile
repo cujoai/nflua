@@ -75,7 +75,7 @@ $(BUILD_DIR)/iptables/libxt_lua.so: | $(BUILD_DIR)
 		-I "$(BUILD_DIR)"/src \
 		-DNETLINK_NFLUA=$(NETLINK_NFLUA) \
 		"$(BUILD_DIR)"/iptables/libxt_lua.c \
-		-fPIC -shared -o "$@"
+		-std=gnu99 -fPIC -shared -o "$@"
 
 stage: $(STAGING_CUJO)/include/nflua
 
