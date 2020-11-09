@@ -61,7 +61,7 @@
 #endif /* NFLUA_SETPAUSE */
 
 #ifndef NETLINK_NFLUA
-#error "NETLINK_NFLUA is not defined"
+#define NETLINK_NFLUA NETLINK_GENERIC
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4,13,0)
