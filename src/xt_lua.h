@@ -32,6 +32,7 @@ enum { XT_NFLUA_TCP_PAYLOAD = 0x01 };
 struct xt_lua_mtinfo {
 	char func[XT_LUA_FUNC_SIZE];
 	__u8 flags;
+	__u32 mask;
 };
 
 #define GENL_NFLUA_FAMILY_NAME	"NFLUA"

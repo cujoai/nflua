@@ -17,29 +17,34 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <getopt.h>
 
 #include <xtables.h>
 #include <xt_lua.h>
 
-enum { O_FUNCTION = 0x02, O_TCP_PAYLOAD = 0x04 };
+#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
+
+enum { O_FUNCTION = 0x02, O_TCP_PAYLOAD = 0x04, O_MASK = 0x08 };
 
 static void nflua_help(void)
 {
 	printf("Netfilter Lua\n"
 	       "--tcp-payload\tmatch if tcp payload length is greater than zero\n"
-	       "[!] --function\tmatch function\n");
+	       "--mask mask\tmatch if any bit in mask is set by nf.set_match_bit\n"
+	       "--function\tmatch function\n");
 }
 
 static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 		       const void *entry, struct xt_entry_match **match)
 {
 	((void)argv);
-	((void)invert);
-	((void)flags);
 	((void)entry);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)(*match)->data;
+
+	if (invert)
+		xtables_error(PARAMETER_PROBLEM, "'!' not supported");
 
 	switch (c) {
 	case O_FUNCTION:
@@ -57,6 +62,23 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 		*flags |= O_TCP_PAYLOAD;
 		break;
+
+	case O_MASK: {
+		char *end;
+		unsigned long match_mask = strtoul(optarg, &end, 0);
+		if (*end != '\0')
+			xtables_error(PARAMETER_PROBLEM, "invalid mask '%s'",
+				      optarg);
+		if ((unsigned long)(__u32)match_mask != match_mask)
+			xtables_error(PARAMETER_PROBLEM,
+				      "mask %#lx out of range", match_mask);
+
+		if (match_mask) {
+			info->mask |= match_mask;
+			*flags |= O_MASK;
+		}
+		break;
+	}
 	}
 
 	return 1;
@@ -64,13 +86,13 @@ static int nflua_parse(int c, char **argv, int invert, unsigned int *flags,
 
 static void nflua_check(unsigned int flags)
 {
-	if (!(flags & O_FUNCTION))
-		xtables_error(PARAMETER_PROBLEM, "'--function' is mandatory");
+	(void)flags;
 }
 
 static const struct option nflua_opts[] = {
 	{ .name = "function", .has_arg = 1, .val = O_FUNCTION },
 	{ .name = "tcp-payload", .has_arg = 0, .val = O_TCP_PAYLOAD },
+	{ .name = "mask", .has_arg = 1, .val = O_MASK },
 	XT_GETOPT_TABLEEND,
 };
 
@@ -81,10 +103,18 @@ static void nflua_print(const void *ip, const struct xt_entry_match *match,
 	((void)numeric);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)match->data;
 
-	printf(" %s", info->func);
+	/* TODO: This output order is the exact reverse of the evaluation order
+	 * in the matching logic, which is misleading.
+	 */
+
+	if (info->func[0] != '\0')
+		printf(" func:%s", info->func);
 
 	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
 		printf(" tcp-payload");
+
+	if (info->mask)
+		printf(" mask:%#lx", (unsigned long)info->mask);
 }
 
 static void nflua_save(const void *ip, const struct xt_entry_match *match)
@@ -92,10 +122,18 @@ static void nflua_save(const void *ip, const struct xt_entry_match *match)
 	((void)ip);
 	struct xt_lua_mtinfo *info = (struct xt_lua_mtinfo *)match->data;
 
-	printf(" --function %s", info->func);
+	/* TODO: This output order is the exact reverse of the evaluation order
+	 * in the matching logic, which is misleading.
+	 */
+
+	if (info->func[0] != '\0')
+		printf(" --function %s", info->func);
 
 	if (info->flags & XT_NFLUA_TCP_PAYLOAD)
 		printf(" --tcp-payload");
+
+	if (info->mask)
+		printf(" --mask %#lx", (unsigned long)info->mask);
 }
 
 static struct xtables_match nflua_mt_reg = {
