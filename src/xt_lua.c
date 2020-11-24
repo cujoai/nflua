@@ -17,6 +17,7 @@
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
+#include <linux/atomic.h>
 #include <linux/ratelimit.h>
 #include <linux/module.h>
 #include <linux/moduleparam.h>
@@ -129,6 +130,8 @@ static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX + 1] = {
 				  .len = GENL_NFLUA_ATTR_MSG_MAX },
 };
 
+static atomic_t match_mask = ATOMIC_INIT(0);
+
 static void nflua_destroy(const struct xt_mtdtor_param *par)
 {
 }
@@ -168,15 +171,39 @@ static int nflua_msghandler(lua_State *L)
 static int nflua_pcall(lua_State *L, int nargs, int nresults)
 {
 	int status;
-	struct timeval start, stop;
 	int base = lua_gettop(L) - nargs;
+
+	// TODO: Instead of these #ifs we should use monotonic time, which has
+	// had the same interface forever. But to avoid inconsistencies,
+	// userspace needs to be updated to use monotonic timers as well.
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	struct timespec64 start, stop;
+#else
+	struct timeval start, stop;
+#endif
+
 	lua_pushcfunction(L, nflua_msghandler);
 	lua_insert(L, base);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	ktime_get_real_ts64(&start);
+#else
 	do_gettimeofday(&start);
+#endif
+
 	status = lua_pcall(L, nargs, nresults, base);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	ktime_get_real_ts64(&stop);
+	total_elapsed_time_usec +=
+		(unsigned)((stop.tv_nsec - start.tv_nsec) * NSEC_PER_USEC) +
+		(unsigned)((stop.tv_sec - start.tv_sec) * USEC_PER_SEC);
+#else
 	do_gettimeofday(&stop);
 	total_elapsed_time_usec += (stop.tv_usec - start.tv_usec) +
 				   (stop.tv_sec - start.tv_sec) * USEC_PER_SEC;
+#endif
+
 	lua_remove(L, base);
 	return status;
 }
@@ -213,7 +240,6 @@ static unsigned int string_to_tg(const char *s)
 
 static int nflua_docall(lua_State *L)
 {
-	struct timeval start, stop;
 	struct nflua_ctx *ctx = lua_touserdata(L, 1);
 	struct sk_buff *skb = ctx->skb;
 	const struct xt_lua_mtinfo *info = ctx->par->matchinfo;
@@ -232,11 +258,7 @@ static int nflua_docall(lua_State *L)
 	ctx->frame =
 		ldata_newref(L, skb_mac_header(skb), skb_mac_header_len(skb));
 	ctx->packet = ldata_newref(L, skb->data, skb->len);
-	do_gettimeofday(&start);
 	error = lua_pcall(L, 2, 1, 0);
-	do_gettimeofday(&stop);
-	total_elapsed_time_usec += (stop.tv_usec - start.tv_usec) +
-				   (stop.tv_sec - start.tv_sec) * USEC_PER_SEC;
 
 	luaU_setregval(L, NFLUA_CTXENTRY, NULL);
 	luaU_setregval(L, NFLUA_SKBCLONE, NULL);
@@ -320,9 +342,15 @@ static bool nflua_match(const struct sk_buff *skb, struct xt_action_param *par)
 {
 	const struct xt_lua_mtinfo *info = par->matchinfo;
 
+	if (info->mask && !((__u32)atomic_read(&match_mask) & info->mask))
+		return false;
+
 	if ((info->flags & XT_NFLUA_TCP_PAYLOAD) &&
 	    tcp_payload_length(skb) <= 0)
 		return false;
+
+	if (info->func[0] == '\0')
+		return true;
 
 	return nflua_call((struct sk_buff *)skb, par, NFLUA_MATCH).match;
 }
@@ -769,17 +797,66 @@ static int nflua_get_cpu_mem_info(lua_State *L)
 	return 3;
 }
 
-static const luaL_Reg nflua_lib[] = { { "reply", nflua_reply },
-				      { "netlink", nflua_netlink },
-				      { "genetlink", nflua_genetlink },
-				      { "time", nflua_time },
-				      { "getpacket", nflua_getpacket },
-				      { "connid", nflua_connid },
-				      { "hotdrop", nflua_hotdrop },
-				      { "traffic", nflua_traffic },
-				      { "get_cpu_mem_info",
-					nflua_get_cpu_mem_info },
-				      { NULL, NULL } };
+static int nflua_get_match_mask(lua_State *L)
+{
+	lua_pushinteger(L, atomic_read(&match_mask));
+	return 1;
+}
+
+static int nflua_reset_match_mask(lua_State *L)
+{
+	atomic_set(&match_mask, 0);
+	return 0;
+}
+
+static int nflua_set_match_bit(lua_State *L)
+{
+	lua_Integer bit;
+	bool enable;
+	int match_bit;
+
+	bit = luaL_checkinteger(L, 1);
+	luaL_argcheck(L, bit >= 0 && bit < sizeof(match_mask) * 8, 1,
+		      "bit out of range");
+	luaL_checktype(L, 2, LUA_TBOOLEAN);
+	enable = lua_toboolean(L, 2);
+
+	match_bit = 1 << bit;
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 2, 0)
+	if (enable)
+		atomic_or(match_bit, &match_mask);
+	else
+		atomic_andnot(match_bit, &match_mask);
+#else
+	// atomic_set_mask and atomic_clear_mask are not available on all
+	// architectures, so we use add and sub instead. Since we're under the
+	// Lua state spinlock we shouldn't suffer from TOC-TOU races here.
+	if (enable) {
+		if (!(atomic_read(&match_mask) & match_bit))
+			atomic_add(match_bit, &match_mask);
+	} else if (atomic_read(&match_mask) & match_bit)
+		atomic_sub(match_bit, &match_mask);
+#endif
+
+	return 0;
+}
+
+static const luaL_Reg nflua_lib[] = {
+	{ "reply", nflua_reply },
+	{ "netlink", nflua_netlink },
+	{ "genetlink", nflua_genetlink },
+	{ "time", nflua_time },
+	{ "getpacket", nflua_getpacket },
+	{ "connid", nflua_connid },
+	{ "hotdrop", nflua_hotdrop },
+	{ "traffic", nflua_traffic },
+	{ "get_cpu_mem_info", nflua_get_cpu_mem_info },
+	{ "get_match_mask", nflua_get_match_mask },
+	{ "reset_match_mask", nflua_reset_match_mask },
+	{ "set_match_bit", nflua_set_match_bit },
+	{ NULL, NULL }
+};
 
 static const luaL_Reg nflua_skb_ops[] = { { "send", nflua_skb_send },
 					  { "close", nflua_skb_free },
