@@ -331,7 +331,7 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
 	/* ip6_route_me_harder expects skb->dst to be set */
-	skb_dst_set_noref(nskb, skb_dst(skb));
+	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
 
 	return nskb;
 }
@@ -474,7 +474,7 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
 	/* ip_route_me_harder expects skb->dst to be set */
-	skb_dst_set_noref(nskb, skb_dst(oldskb));
+	skb_dst_set(nskb, dst_clone(skb_dst(oldskb)));
 
 	nskb->protocol = htons(ETH_P_IP);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
@@ -579,7 +579,7 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	ip_send_check(niph);
 
 	/* ip_route_me_harder expects skb->dst to be set */
-	skb_dst_set_noref(nskb, skb_dst(skb));
+	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
 
 	return nskb;
 }
