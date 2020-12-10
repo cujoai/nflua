@@ -330,7 +330,9 @@ static struct sk_buff *tcp_ipv6_payload(struct sk_buff *skb,
 	nip6h->payload_len = htons(tcplen);
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	/* ip6_route_me_harder expects skb->dst to be set */
+	/* __ip6_route_me_harder expects skb->dst to be set, and the caller may
+	 * free skb before calling it, so reference the dst properly.
+	 */
 	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
 
 	return nskb;
@@ -473,8 +475,10 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 					csum_partial(tcph, tcplen, 0));
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	/* ip_route_me_harder expects skb->dst to be set */
-	skb_dst_set(nskb, dst_clone(skb_dst(oldskb)));
+	/* ip_route_me_harder expects skb->dst to be set, but will immediately
+	 * overwrite it, so we can safely use noref here.
+	 */
+	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
@@ -578,7 +582,9 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	niph->tot_len = htons(nskb->len);
 	ip_send_check(niph);
 
-	/* ip_route_me_harder expects skb->dst to be set */
+	/* ip_route_me_harder expects skb->dst to be set, and the caller may
+	 * free skb before calling it, so reference the dst properly.
+	 */
 	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
 
 	return nskb;
