@@ -309,15 +309,12 @@ static union call_result nflua_call(struct sk_buff *skb,
 
 	switch (mode) {
 	case NFLUA_MATCH:
-		/* Commented because some lua scripts don't yet return proper value
 		if (lua_isboolean(L, -1))
 			r.match = lua_toboolean(L, -1);
 		else {
 			const struct xt_lua_mtinfo *info = par->matchinfo;
 			pr_warn("invalid match return: %s", info->func);
 		}
-		*/
-		r.match = (bool)lua_toboolean(L, -1);
 		break;
 	case NFLUA_TARGET:
 		if (lua_isstring(L, -1)) {
