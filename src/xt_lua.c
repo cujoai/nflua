@@ -395,7 +395,7 @@ error:
 
 #define nlmsg_send(sock, skb, pid, group)               \
 	((group == 0) ? nlmsg_unicast(sock, skb, pid) : \
-			nlmsg_multicast(sock, skb, pid, group, 0))
+			      nlmsg_multicast(sock, skb, pid, group, 0))
 
 static int nflua_netlink(lua_State *L)
 {

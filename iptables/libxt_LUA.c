@@ -23,7 +23,8 @@
 
 #include <xt_lua.h>
 
-enum { O_FUNCTION,
+enum {
+	O_FUNCTION,
 };
 
 static const struct xt_option_entry nflua_tg_opts[] = {
