@@ -61,20 +61,8 @@ bool nf_util_init(void)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
-#define __ip_route_me_harder(skb) \
-	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC))
-
-#ifdef USE_IPV6
-#define __ip6_route_me_harder(skb) \
-	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb))
-#endif /* USE_IPV6 */
 #else
-#define __dst_output(skb)	  (dst_output(skb))
-#define __ip_route_me_harder(skb) (ip_route_me_harder(skb, RTN_UNSPEC))
-
-#ifdef USE_IPV6
-#define __ip6_route_me_harder(skb) (ip6_route_me_harder(skb))
-#endif /* USE_IPV6 */
+#define __dst_output(skb) (dst_output(skb))
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 7, 0)
@@ -94,7 +82,11 @@ bool nf_util_init(void)
 	} while (0)
 #endif
 
+static int route_me_harder4(struct net *net, struct sk_buff *skb);
+
 #ifdef USE_IPV6
+static int route_me_harder6(struct net *net, struct sk_buff *skb);
+
 #include <net/ip6_route.h>
 #include <linux/netfilter_ipv6/ip6_tables.h>
 
@@ -475,17 +467,13 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 					csum_partial(tcph, tcplen, 0));
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
-	/* ip_route_me_harder expects skb->dst to be set, but will immediately
+	/* route_me_harder4 expects skb->dst to be set, but will immediately
 	 * overwrite it, so we can safely use noref here.
 	 */
 	skb_dst_set_noref(nskb, skb_dst(oldskb));
 
 	nskb->protocol = htons(ETH_P_IP);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-	if (ip_route_me_harder(xt_net(par), nskb, RTN_UNSPEC))
-#else
-	if (ip_route_me_harder(nskb, RTN_UNSPEC))
-#endif
+	if (route_me_harder4(xt_net(par), nskb))
 		goto free_nskb;
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2, 6, 38)
@@ -713,11 +701,33 @@ int tcp_payload_length(const struct sk_buff *skb)
 	return tcp_ipv4_payload_length(skb);
 }
 
-int route_me_harder(struct sk_buff *skb)
+static int route_me_harder4(struct net *net, struct sk_buff *skb)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	return ip_route_me_harder(net, skb, RTN_UNSPEC);
+#else
+	(void)net;
+	return ip_route_me_harder(skb, RTN_UNSPEC);
+#endif
+}
+
+#ifdef USE_IPV6
+static int route_me_harder6(struct net *net, struct sk_buff *skb)
+{
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	return ip6_route_me_harder(net, skb);
+#else
+	(void)net;
+	return ip6_route_me_harder(skb);
+#endif
+}
+#endif
+
+int route_me_harder(struct net *net, struct sk_buff *skb)
 {
 #ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
-		return __ip6_route_me_harder(skb);
-#endif /* USE_IPV6 */
-	return __ip_route_me_harder(skb);
+		return route_me_harder6(net, skb);
+#endif
+	return route_me_harder4(net, skb);
 }

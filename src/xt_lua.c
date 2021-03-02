@@ -530,7 +530,7 @@ static int nflua_skb_send(lua_State *L)
 		luaL_error(L, "unable to route packet, destination link down");
 	}
 
-	if (route_me_harder(nskb)) {
+	if (route_me_harder(dev_net(dst->dev), nskb)) {
 		kfree_skb(nskb);
 		luaL_error(L, "unable to route packet");
 	}
