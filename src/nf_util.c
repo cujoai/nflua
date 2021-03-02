@@ -703,7 +703,42 @@ int tcp_payload_length(const struct sk_buff *skb)
 
 static int route_me_harder4(struct net *net, struct sk_buff *skb)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+	return ip_route_me_harder(net, skb->sk, skb, RTN_UNSPEC);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+	/*
+	 * OpenWrt has backported a change from 5.10 (kernel commit 46d6c5ae953)
+	 * to 4.14, changing the type of ip_route_me_harder. We can't identify
+	 * that in the preprocessor alone so use GCC builtins to evaluate the
+	 * type and call the function in the right way.
+	 */
+
+	typedef int (*type_after_510)(struct net *, struct sock *,
+				      struct sk_buff *, unsigned int);
+	typedef int (*type_after_440)(struct net *, struct sk_buff *,
+				      unsigned int);
+
+	/*
+	 * Use an intermediate variable to silence GCC warning about the types
+	 * being incompatible.
+	 */
+	void *func = ip_route_me_harder;
+
+	if (__builtin_types_compatible_p(typeof(&ip_route_me_harder),
+					 type_after_510)) {
+		return ((type_after_510)func)(net, skb->sk, skb, RTN_UNSPEC);
+	} else if (__builtin_types_compatible_p(typeof(&ip_route_me_harder),
+						type_after_440)) {
+		return ((type_after_440)func)(net, skb, RTN_UNSPEC);
+	} else {
+		/*
+		 * Hopefully this is loud enough for anyone to notice.
+		 */
+		WARN_ONCE(1, "ip_route_me_harder has unsupported type");
+		return -EFAULT;
+	}
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 	return ip_route_me_harder(net, skb, RTN_UNSPEC);
 #else
 	(void)net;
@@ -714,7 +749,27 @@ static int route_me_harder4(struct net *net, struct sk_buff *skb)
 #ifdef USE_IPV6
 static int route_me_harder6(struct net *net, struct sk_buff *skb)
 {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
+	return ip_route_me_harder(net, skb->sk, skb, RTN_UNSPEC);
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 14, 0)
+
+	/* See route_me_harder4. */
+	typedef int (*type_after_510)(struct net *, struct sock *,
+				      struct sk_buff *);
+	typedef int (*type_after_440)(struct net *, struct sk_buff *);
+	void *func = ip6_route_me_harder;
+	if (__builtin_types_compatible_p(typeof(&ip6_route_me_harder),
+					 type_after_510)) {
+		return ((type_after_510)func)(net, skb->sk, skb);
+	} else if (__builtin_types_compatible_p(typeof(&ip6_route_me_harder),
+						type_after_440)) {
+		return ((type_after_440)func)(net, skb);
+	} else {
+		WARN_ONCE(1, "ip6_route_me_harder has unsupported type");
+		return -EFAULT;
+	}
+
+#elif LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 	return ip6_route_me_harder(net, skb);
 #else
 	(void)net;
