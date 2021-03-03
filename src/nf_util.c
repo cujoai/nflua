@@ -61,12 +61,21 @@ bool nf_util_init(void)
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
 #define __dst_output(skb) (dst_output(dev_net(skb_dst(skb)->dev), skb->sk, skb))
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 78)
+#define __ip_route_me_harder(skb) \
+	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb->sk, skb, RTN_UNSPEC))
+#else
 #define __ip_route_me_harder(skb) \
 	(ip_route_me_harder(dev_net(skb_dst(skb)->dev), skb, RTN_UNSPEC))
-
+#endif
 #ifdef USE_IPV6
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 78)
+#define __ip6_route_me_harder(skb) \
+	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb->sk, skb))
+#else
 #define __ip6_route_me_harder(skb) \
 	(ip6_route_me_harder(dev_net(skb_dst(skb)->dev), skb))
+#endif
 #endif /* USE_IPV6 */
 #else
 #define __dst_output(skb)	  (dst_output(skb))
@@ -482,7 +491,11 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 
 	nskb->protocol = htons(ETH_P_IP);
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 78)
+	if (ip_route_me_harder(xt_net(par), nskb->sk, nskb, RTN_UNSPEC))
+#else
 	if (ip_route_me_harder(xt_net(par), nskb, RTN_UNSPEC))
+#endif
 #else
 	if (ip_route_me_harder(nskb, RTN_UNSPEC))
 #endif
