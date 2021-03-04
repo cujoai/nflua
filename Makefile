@@ -42,6 +42,7 @@ MODULE_MAKE_OPTS := \
 	CONFIG_NFLUA=m \
 	CONFIG_LUNATIK=m \
 	CONFIG_LUABASE64=m \
+	CONFIG_LUAKCRYPTO=m \
 	CONFIG_LUADATA=m \
 	CONFIG_LUAJSON=m \
 	CONFIG_LUNATIK_DEBUG=m \
@@ -154,6 +155,7 @@ clean:
 		"$(INSTALL_CUJO)"/share/nflua-tests/ \
 		"$(INSTALL_ROOT)/$(TARGET_XTABLES_LIBDIR)"/libxt_lua.so \
 		"$(INSTALL_ROOT)"/lib/modules/*/luabase64.ko
+		"$(INSTALL_ROOT)"/lib/modules/*/luakcrypto.ko
 		"$(INSTALL_ROOT)"/lib/modules/*/luaconntrack.ko
 		"$(INSTALL_ROOT)"/lib/modules/*/luadata.ko
 		"$(INSTALL_ROOT)"/lib/modules/*/luajson.ko

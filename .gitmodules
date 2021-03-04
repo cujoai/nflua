@@ -13,3 +13,6 @@
 [submodule "lib/luabase64"]
 	path = lib/luabase64
 	url = git@github.com:cujoai/luabase64.git
+[submodule "lib/luakcrypto"]
+	path = lib/luakcrypto
+	url = git@github.com:cujoai/luakcrypto
