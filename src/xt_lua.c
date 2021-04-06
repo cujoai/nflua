@@ -427,10 +427,10 @@ static int nflua_netlink(lua_State *L)
 	if ((err = nlmsg_send(sock, skb, pid, group)) < 0) {
 		switch (-err) {
 		case EAGAIN:
-			return luaL_error(L, "socket buffer full: Rabid busy?");
+			return luaL_error(L, "socket buffer full: agent busy?");
 		case ECONNREFUSED:
 			return luaL_error(
-				L, "connection refused: Rabid shut down?");
+				L, "connection refused: agent shut down?");
 		default:
 			return luaL_error(L, "error code %d", err);
 		}
