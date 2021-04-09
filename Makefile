@@ -149,16 +149,17 @@ tests-install: | $(BUILD_DIR)
 
 clean:
 	rm -rf \
-		"$(BUILD_DIR)" \
+		"$(BUILD_DIR)"/iptables/libxt_lua.so \
+		"$(BUILD_DIR)"/modules.tmp \
 		"$(STAGING_CUJO)"/include/nflua/ \
 		"$(INSTALL_CUJO)"/lib/iptables/ \
 		"$(INSTALL_CUJO)"/share/nflua-tests/ \
 		"$(INSTALL_ROOT)/$(TARGET_XTABLES_LIBDIR)"/libxt_lua.so \
-		"$(INSTALL_ROOT)"/lib/modules/*/luabase64.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/luakcrypto.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/luaconntrack.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/luadata.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/luajson.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/lunatik.ko
-		"$(INSTALL_ROOT)"/lib/modules/*/lunatiktest.ko
+		"$(INSTALL_ROOT)"/lib/modules/*/luabase64.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/luakcrypto.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/luaconntrack.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/luadata.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/luajson.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/lunatik.ko \
+		"$(INSTALL_ROOT)"/lib/modules/*/lunatiktest.ko \
 		"$(INSTALL_ROOT)"/lib/modules/*/nflua.ko
