@@ -507,6 +507,90 @@ free_nskb:
 	return -1;
 }
 
+static struct sk_buff *udp_ipv6_payload(struct sk_buff *skb,
+					unsigned char *payload, size_t len)
+{
+	struct udphdr udph, *nudphp;
+	struct ipv6hdr *nip6h, *ip6h = ipv6_hdr(skb);
+	struct sk_buff *nskb;
+	unsigned char *data;
+	unsigned int oudplen;
+	size_t udplen;
+	int udphoff;
+	u8 proto;
+	__be16 frag_off;
+
+	if (!(ipv6_addr_type(&ip6h->saddr) & IPV6_ADDR_UNICAST) ||
+	    !(ipv6_addr_type(&ip6h->daddr) & IPV6_ADDR_UNICAST)) {
+		pr_warn("addr is not unicast.\n");
+		return NULL;
+	}
+
+	proto = ip6h->nexthdr;
+	udphoff = ipv6_skip_exthdr(skb, (u8 *)(ip6h + 1) - skb->data, &proto,
+				   &frag_off);
+
+	if (udphoff < 0 || udphoff > skb->len) {
+		pr_warn("Cannot get UDP header.\n");
+		return NULL;
+	}
+
+	oudplen = skb->len - udphoff;
+
+	/* IP header checks: fragment, too short. */
+	if (proto != IPPROTO_UDP || oudplen < sizeof(struct udphdr)) {
+		pr_warn("proto(%d) != IPPROTO_UDP, or too short. udplen = %d\n",
+			proto, oudplen);
+		return NULL;
+	}
+
+	if (skb_copy_bits(skb, udphoff, &udph, sizeof(struct udphdr))) {
+		pr_warn("Could not copy UDP header.\n");
+		return NULL;
+	}
+
+	nskb = alloc_skb(sizeof(struct ipv6hdr) + sizeof(struct udphdr) +
+				 LL_MAX_HEADER + len,
+			 GFP_ATOMIC);
+	if (nskb == NULL) {
+		pr_warn("Could not allocate new skb\n");
+		return NULL;
+	}
+
+	nskb->protocol = htons(ETH_P_IPV6);
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_reset_network_header(nskb);
+	nip6h = (struct ipv6hdr *)skb_put(nskb, sizeof(struct ipv6hdr));
+	memcpy(nip6h, ip6h, sizeof(struct ipv6hdr));
+	nip6h->nexthdr = IPPROTO_UDP;
+
+	skb_set_transport_header(nskb, sizeof(struct ipv6hdr));
+	nudphp = (struct udphdr *)skb_put(nskb, sizeof(struct udphdr));
+	memcpy(nudphp, &udph, sizeof(struct udphdr));
+
+	data = skb_put(nskb, len);
+	memcpy(data, payload, len);
+
+	udplen = nskb->len - sizeof(struct ipv6hdr);
+
+	/* Adjust TCP checksum */
+	nudphp->check = 0;
+	nudphp->check = csum_ipv6_magic(&nip6h->saddr, &nip6h->daddr, udplen,
+					IPPROTO_UDP,
+					csum_partial(nudphp, udplen, 0));
+
+	nip6h->payload_len = htons(udplen);
+	nskb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	/* __ip6_route_me_harder expects skb->dst to be set, and the caller may
+	 * free skb before calling it, so reference the dst properly.
+	 */
+	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
+
+	return nskb;
+}
+
 #endif /* USE_IPV6 */
 
 static int udp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
@@ -807,6 +891,72 @@ static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,
 	return nskb;
 }
 
+static struct sk_buff *udp_ipv4_payload(struct sk_buff *skb,
+					unsigned char *payload, size_t len)
+{
+	struct udphdr udph, *nudphp;
+	struct iphdr *niph;
+	struct sk_buff *nskb;
+	unsigned char *data;
+	size_t udplen;
+	int udphoff;
+
+	/* IP header checks: fragment. */
+	if (ip_hdr(skb)->frag_off & htons(IP_OFFSET))
+		return NULL;
+
+	udphoff = skb_transport_offset(skb);
+	if (udphoff < 0 || udphoff >= skb->len) {
+		pr_warn("Cannot get UDP header.\n");
+		return NULL;
+	}
+
+	if (skb_copy_bits(skb, udphoff, &udph, sizeof(struct udphdr))) {
+		pr_warn("Could not copy UDP header.\n");
+		return NULL;
+	}
+
+	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct udphdr) +
+				 LL_MAX_HEADER + len,
+			 GFP_ATOMIC);
+	if (nskb == NULL) {
+		pr_warn("Could not allocate new skb\n");
+		return NULL;
+	}
+
+	nskb->protocol = htons(ETH_P_IP);
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_reset_network_header(nskb);
+	niph = (struct iphdr *)skb_put(nskb, sizeof(struct iphdr));
+	memcpy(niph, ip_hdr(skb), sizeof(struct iphdr));
+	niph->ihl = sizeof(struct iphdr) / 4;
+	niph->frag_off = htons(IP_DF);
+
+	skb_set_transport_header(nskb, sizeof(struct iphdr));
+	nudphp = (struct udphdr *)skb_put(nskb, sizeof(struct udphdr));
+	memcpy(nudphp, &udph, sizeof(struct udphdr));
+
+	data = skb_put(nskb, len);
+	memcpy(data, payload, len);
+
+	udplen = nskb->len - ip_hdrlen(nskb);
+	nudphp->check = 0;
+	nudphp->check = csum_tcpudp_magic(niph->saddr, niph->daddr, udplen,
+					  IPPROTO_UDP,
+					  csum_partial(nudphp, udplen, 0));
+
+	niph->tot_len = htons(nskb->len);
+	ip_send_check(niph);
+
+	/* ip_route_me_harder expects skb->dst to be set, and the caller may
+	 * free skb before calling it, so reference the dst properly.
+	 */
+	skb_dst_set(nskb, dst_clone(skb_dst(skb)));
+
+	return nskb;
+}
+
 static int tcp_ipv4_payload_length(const struct sk_buff *skb)
 {
 	struct tcphdr _tcph, *tcph;
@@ -840,6 +990,16 @@ struct sk_buff *tcp_payload(struct sk_buff *skb, unsigned char *payload,
 		return tcp_ipv6_payload(skb, payload, len);
 #endif
 	return tcp_ipv4_payload(skb, payload, len);
+}
+
+struct sk_buff *udp_payload(struct sk_buff *skb, unsigned char *payload,
+			    size_t len)
+{
+#ifdef USE_IPV6
+	if (skb->protocol == htons(ETH_P_IPV6))
+		return udp_ipv6_payload(skb, payload, len);
+#endif
+	return udp_ipv4_payload(skb, payload, len);
 }
 
 #if ((LINUX_VERSION_CODE >= KERNEL_VERSION(3, 14, 0)) && \
@@ -912,7 +1072,7 @@ static int ipv4_forward_finish(struct sk_buff *skb)
 	return __dst_output(skb);
 }
 
-int tcp_send(struct sk_buff *skb)
+int finish_send(struct sk_buff *skb)
 {
 #ifdef USE_IPV6
 	if (skb->protocol == htons(ETH_P_IPV6))
