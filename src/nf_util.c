@@ -468,7 +468,7 @@ static int udp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	udph = (struct udphdr *)skb_put(nskb, sizeof(struct udphdr));
 	udph->source = oudph.dest;
 	udph->dest = oudph.source;
-	udph->len = sizeof(struct udphdr) + len;
+	udph->len = htons(sizeof(struct udphdr) + len);
 	udplen = nskb->len - sizeof(struct ipv6hdr);
 	udph->check = 0;
 
@@ -623,7 +623,7 @@ static int udp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 
 	oiph = ip_hdr(oldskb);
 
-	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct tcphdr) +
+	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct udphdr) +
 				 LL_MAX_HEADER + len,
 			 GFP_ATOMIC);
 	if (!nskb)
@@ -648,7 +648,7 @@ static int udp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	memset(udph, 0, sizeof(*udph));
 	udph->source = oth->dest;
 	udph->dest = oth->source;
-	udph->len = sizeof(struct udphdr) + len;
+	udph->len = htons(sizeof(struct udphdr) + len);
 
 	data = skb_put(nskb, len);
 	memcpy(data, msg, len);
