@@ -946,6 +946,7 @@ static struct sk_buff *udp_ipv4_payload(struct sk_buff *skb,
 
 	udplen = nskb->len - ip_hdrlen(nskb);
 	nudphp->check = 0;
+	nudphp->len = htons(udplen);
 	nudphp->check = csum_tcpudp_magic(niph->saddr, niph->daddr, udplen,
 					  IPPROTO_UDP,
 					  csum_partial(nudphp, udplen, 0));
