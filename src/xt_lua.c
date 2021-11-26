@@ -502,15 +502,25 @@ static int nflua_skb_send(lua_State *L)
 	struct dst_entry *dst;
 	size_t len;
 	unsigned char *payload;
+	unsigned int proto;
 
 	if (*lskb == NULL)
 		return luaL_error(L, "closed packet");
 
 	payload = (unsigned char *)lua_tolstring(L, 2, &len);
+	proto = (unsigned int)lua_tointeger(L, 3);
 	if (payload != NULL) {
-		nskb = tcp_payload(*lskb, payload, len);
-		if (nskb == NULL)
-			return luaL_error(L, "unable to set tcp payload");
+		if (proto == IPPROTO_TCP) {
+			nskb = tcp_payload(*lskb, payload, len);
+			if (nskb == NULL)
+				return luaL_error(L,
+						  "unable to set tcp payload");
+		} else {
+			nskb = udp_payload(*lskb, payload, len);
+			if (nskb == NULL)
+				return luaL_error(L,
+						  "unable to set udp payload");
+		}
 
 		/* Original packet is not needed anymore */
 		kfree_skb(*lskb);
