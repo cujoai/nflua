@@ -41,7 +41,6 @@ MODULE_MAKE_OPTS := \
 	NETLINK_NFLUA=$(NETLINK_NFLUA) \
 	CONFIG_NFLUA=m \
 	CONFIG_LUNATIK=m \
-	CONFIG_LUABASE64=m \
 	CONFIG_LUAKCRYPTO=m \
 	CONFIG_LUADATA=m \
 	CONFIG_LUAJSON=m \
@@ -134,10 +133,6 @@ tests-install: | $(BUILD_DIR)
 	install -m0755 \
 		"$(BUILD_DIR)"/lib/lunatik-tests/kernel/linux/runall.sh \
 		"$(INSTALL_CUJO)"/share/nflua-tests/lunatik/
-	install -d "$(INSTALL_CUJO)"/share/nflua-tests/luabase64
-	install -m0644 \
-		"$(BUILD_DIR)"/lib/luabase64/test.lua \
-		"$(INSTALL_CUJO)"/share/nflua-tests/luabase64/
 	install -d "$(INSTALL_CUJO)"/share/nflua-tests/luadata
 	install -m0644 \
 		"$(BUILD_DIR)"/lib/luadata/test.lua \
@@ -155,7 +150,6 @@ clean:
 		"$(INSTALL_CUJO)"/lib/iptables/ \
 		"$(INSTALL_CUJO)"/share/nflua-tests/ \
 		"$(INSTALL_ROOT)/$(TARGET_XTABLES_LIBDIR)"/libxt_lua.so \
-		"$(INSTALL_ROOT)"/lib/modules/*/luabase64.ko \
 		"$(INSTALL_ROOT)"/lib/modules/*/luakcrypto.ko \
 		"$(INSTALL_ROOT)"/lib/modules/*/luaconntrack.ko \
 		"$(INSTALL_ROOT)"/lib/modules/*/luadata.ko \

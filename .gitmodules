@@ -10,9 +10,6 @@
 [submodule "lib/lunatik-tests"]
 	path = lib/lunatik-tests
 	url = git@github.com:cujoai/lunatik-tests.git
-[submodule "lib/luabase64"]
-	path = lib/luabase64
-	url = git@github.com:cujoai/luabase64.git
 [submodule "lib/luakcrypto"]
 	path = lib/luakcrypto
 	url = git@github.com:cujoai/luakcrypto

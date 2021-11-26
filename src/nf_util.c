@@ -665,9 +665,11 @@ static int udp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	nf_ct_attach(nskb, oldskb);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-	ip_local_out(xt_net(par), nskb->sk, nskb);
+	if (ip_local_out(xt_net(par), nskb->sk, nskb))
+		goto free_nskb;
 #else
-	ip_local_out(nskb);
+	if (ip_local_out(nskb))
+		goto free_nskb;
 #endif
 
 	return 0;
@@ -792,9 +794,11 @@ static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	nf_ct_attach(nskb, oldskb);
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
-	ip_local_out(xt_net(par), nskb->sk, nskb);
+	if (ip_local_out(xt_net(par), nskb->sk, nskb))
+		goto free_nskb;
 #else
-	ip_local_out(nskb);
+	if (ip_local_out(nskb))
+		goto free_nskb;
 #endif
 
 	return 0;
@@ -942,6 +946,7 @@ static struct sk_buff *udp_ipv4_payload(struct sk_buff *skb,
 
 	udplen = nskb->len - ip_hdrlen(nskb);
 	nudphp->check = 0;
+	nudphp->len = htons(udplen);
 	nudphp->check = csum_tcpudp_magic(niph->saddr, niph->daddr, udplen,
 					  IPPROTO_UDP,
 					  csum_partial(nudphp, udplen, 0));
