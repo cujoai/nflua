@@ -788,10 +788,9 @@ out:
 static int nflua_get_cpu_mem_info(lua_State *L)
 {
 	lua_pushinteger(L, (lua_Integer)total_alloc_mem);
-	lua_pushinteger(L, (lua_Integer)PAGE_SIZE);
 	lua_pushinteger(L, (lua_Integer)total_elapsed_time_usec);
 	total_elapsed_time_usec = 0;
-	return 3;
+	return 2;
 }
 
 static int nflua_get_match_mask(lua_State *L)
