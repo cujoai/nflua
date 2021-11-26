@@ -536,7 +536,7 @@ static int nflua_skb_send(lua_State *L)
 		luaL_error(L, "unable to route packet");
 	}
 
-	if (tcp_send(nskb))
+	if (finish_send(nskb))
 		luaL_error(L, "unable to send packet");
 
 	return 0;

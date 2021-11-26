@@ -27,7 +27,8 @@ int tcp_reply(struct sk_buff *, struct xt_action_param *, unsigned char *,
 int udp_reply(struct sk_buff *, struct xt_action_param *, unsigned char *,
 	      size_t);
 struct sk_buff *tcp_payload(struct sk_buff *, unsigned char *, size_t);
-int tcp_send(struct sk_buff *);
+struct sk_buff *udp_payload(struct sk_buff *, unsigned char *, size_t);
+int finish_send(struct sk_buff *);
 int tcp_payload_length(const struct sk_buff *);
 int route_me_harder(struct net *, struct sk_buff *);
 bool nf_util_init(void);
