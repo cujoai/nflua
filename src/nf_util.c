@@ -53,6 +53,7 @@ bool nf_util_init(void)
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 1, 0)
 #if IS_ENABLED(CONFIG_IPV6)
 #define USE_IPV6
+#define DEFAULT_TOS_VALUE 0x0U
 #endif
 #elif defined(CONFIG_IPV6)
 #define USE_IPV6
@@ -110,7 +111,6 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	int tcphoff, hook;
 	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
 	struct ipv6hdr *ip6h;
-#define DEFAULT_TOS_VALUE 0x0U
 	const __u8 tclass = DEFAULT_TOS_VALUE;
 	struct dst_entry *dst = NULL;
 	u8 proto;
@@ -372,7 +372,226 @@ static int ipv6_forward_finish(struct sk_buff *skb)
 
 	return __dst_output(skb);
 }
+
+static int udp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
+			  unsigned char *msg, size_t len)
+{
+	struct net *net = xt_net(par);
+	struct sk_buff *nskb;
+	struct udphdr oudph, *udph;
+	unsigned char *data;
+	int udphoff;
+	unsigned int oudplen, hh_len;
+	size_t udplen;
+	const struct ipv6hdr *oip6h = ipv6_hdr(oldskb);
+	struct ipv6hdr *ip6h;
+	struct dst_entry *dst = NULL;
+	u8 proto;
+	__be16 frag_off;
+	struct flowi6 fl6;
+	const __u8 tclass = DEFAULT_TOS_VALUE;
+
+	if ((!(ipv6_addr_type(&oip6h->saddr) & IPV6_ADDR_UNICAST)) ||
+	    (!(ipv6_addr_type(&oip6h->daddr) & IPV6_ADDR_UNICAST))) {
+		pr_warn("addr is not unicast.\n");
+		return -1;
+	}
+
+	proto = oip6h->nexthdr;
+	udphoff = ipv6_skip_exthdr(oldskb, ((u8 *)(oip6h + 1) - oldskb->data),
+				   &proto, &frag_off);
+
+	if (udphoff < 0 || udphoff > oldskb->len) {
+		pr_warn("Cannot get UDP header.\n");
+		return -1;
+	}
+
+	oudplen = oldskb->len - udphoff;
+
+	/* IP header checks: fragment, too short. */
+	if (proto != IPPROTO_UDP || oudplen < sizeof(struct udphdr)) {
+		pr_warn("proto(%d) != IPPROTO_UDP, "
+			"or too short. oudplen = %d\n",
+			proto, oudplen);
+		return -1;
+	}
+
+	if (skb_copy_bits(oldskb, udphoff, &oudph, sizeof(struct udphdr)))
+		BUG();
+
+	proto = oip6h->nexthdr;
+
+	memset(&fl6, 0, sizeof(fl6));
+	fl6.flowi6_proto = IPPROTO_UDP;
+	fl6.saddr = oip6h->daddr;
+	fl6.daddr = oip6h->saddr;
+	fl6.fl6_sport = oudph.dest;
+	fl6.fl6_dport = oudph.source;
+	security_skb_classify_flow(oldskb, flowi6_to_flowi(&fl6));
+	dst = ip6_route_output(net, NULL, &fl6);
+	if (dst == NULL || dst->error) {
+		dst_release(dst);
+		return -1;
+	}
+	dst = xfrm_lookup(net, dst, flowi6_to_flowi(&fl6), NULL, 0);
+	if (IS_ERR(dst)) {
+		return -1;
+	}
+
+	hh_len = (dst->dev->hard_header_len + 15) & ~15;
+	nskb = alloc_skb(hh_len + 15 + dst->header_len +
+				 sizeof(struct ipv6hdr) +
+				 sizeof(struct udphdr) + dst->trailer_len + len,
+			 GFP_ATOMIC);
+
+	if (!nskb) {
+		pr_warn("cannot alloc new skb\n");
+		dst_release(dst);
+		return -1;
+	}
+
+	skb_dst_set(nskb, dst);
+
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_put(nskb, sizeof(struct ipv6hdr));
+	skb_reset_network_header(nskb);
+	ip6h = ipv6_hdr(nskb);
+	ip6_flow_hdr(ip6h, tclass, 0);
+	ip6h->hop_limit = ip6_dst_hoplimit(dst);
+
+	ip6h->nexthdr = IPPROTO_UDP;
+	ip6h->saddr = oip6h->daddr;
+	ip6h->daddr = oip6h->saddr;
+
+	skb_reset_transport_header(nskb);
+	udph = (struct udphdr *)skb_put(nskb, sizeof(struct udphdr));
+	udph->source = oudph.dest;
+	udph->dest = oudph.source;
+	udph->len = sizeof(struct udphdr) + len;
+	udplen = nskb->len - sizeof(struct ipv6hdr);
+	udph->check = 0;
+
+	data = skb_put(nskb, len);
+	memcpy(data, msg, len);
+
+	udph->check = csum_ipv6_magic(&ipv6_hdr(nskb)->saddr,
+				      &ipv6_hdr(nskb)->daddr, udph->len,
+				      IPPROTO_UDP,
+				      csum_partial(udph, udph->len, 0));
+
+	nskb->ip_summed = CHECKSUM_UNNECESSARY;
+
+	/* route_me_harder6 expects skb->dst to be set, but will immediately
+	 * overwrite it, so we can safely use noref here.
+	 */
+	skb_dst_set_noref(nskb, skb_dst(oldskb));
+	if (route_me_harder6(xt_net(par), nskb))
+		goto free_nskb;
+
+	/* "Never happens" */
+	if (nskb->len > dst_mtu(skb_dst(nskb)))
+		goto free_nskb;
+
+	nf_ct_attach(nskb, oldskb);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	ip6_local_out(xt_net(par), nskb->sk, nskb);
+#else
+	ip6_local_out(nskb);
+#endif
+	return 0;
+
+free_nskb:
+	kfree(nskb);
+	return -1;
+}
+
 #endif /* USE_IPV6 */
+
+static int udp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
+			  unsigned char *msg, size_t len)
+{
+	struct sk_buff *nskb;
+	const struct iphdr *oiph;
+	struct iphdr *niph;
+	const struct udphdr *oth;
+	struct udphdr _oudph, *udph;
+	unsigned char *data;
+
+	/* IP header checks: fragment. */
+	if (ip_hdr(oldskb)->frag_off & htons(IP_OFFSET)) {
+		pr_warn("Packet is fragmented\n");
+		return -1;
+	}
+
+	oth = skb_header_pointer(oldskb, ip_hdrlen(oldskb), sizeof(_oudph),
+				 &_oudph);
+	if (oth == NULL) {
+		pr_warn("Cannot get header pointer\n");
+		return -1;
+	}
+
+	if (skb_rtable(oldskb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST)) {
+		pr_warn("Not a unicast packet\n");
+		return -1;
+	}
+
+	oiph = ip_hdr(oldskb);
+
+	nskb = alloc_skb(sizeof(struct iphdr) + sizeof(struct tcphdr) +
+				 LL_MAX_HEADER + len,
+			 GFP_ATOMIC);
+	if (!nskb)
+		return -1;
+
+	skb_reserve(nskb, LL_MAX_HEADER);
+
+	skb_reset_network_header(nskb);
+	niph = (struct iphdr *)skb_put(nskb, sizeof(struct iphdr));
+	niph->version = 4;
+	niph->ihl = sizeof(struct iphdr) / 4;
+	niph->tos = 0;
+	niph->id = 0;
+	niph->frag_off = htons(IP_DF);
+	niph->protocol = IPPROTO_UDP;
+	niph->check = 0;
+	niph->saddr = oiph->daddr;
+	niph->daddr = oiph->saddr;
+
+	skb_reset_transport_header(nskb);
+	udph = (struct udphdr *)skb_put(nskb, sizeof(struct udphdr));
+	memset(udph, 0, sizeof(*udph));
+	udph->source = oth->dest;
+	udph->dest = oth->source;
+	udph->len = sizeof(struct udphdr) + len;
+
+	data = skb_put(nskb, len);
+	memcpy(data, msg, len);
+
+	/* route_me_harder4 expects skb->dst to be set, but will immediately
+	 * overwrite it, so we can safely use noref here.
+	 */
+	skb_dst_set_noref(nskb, skb_dst(oldskb));
+
+	nskb->protocol = htons(ETH_P_IP);
+	if (route_me_harder4(xt_net(par), nskb))
+		goto free_nskb;
+
+	nf_ct_attach(nskb, oldskb);
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 4, 0)
+	ip_local_out(xt_net(par), nskb->sk, nskb);
+#else
+	ip_local_out(nskb);
+#endif
+
+	return 0;
+
+free_nskb:
+	kfree_skb(nskb);
+	return -1;
+}
 
 static int tcp_ipv4_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
@@ -509,6 +728,16 @@ int tcp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 		return tcp_ipv6_reply(oldskb, par, msg, len);
 #endif
 	return tcp_ipv4_reply(oldskb, par, msg, len);
+}
+
+int udp_reply(struct sk_buff *oldskb, struct xt_action_param *par,
+	      unsigned char *msg, size_t len)
+{
+#ifdef USE_IPV6
+	if (oldskb->protocol == htons(ETH_P_IPV6))
+		return udp_ipv6_reply(oldskb, par, msg, len);
+#endif
+	return udp_ipv4_reply(oldskb, par, msg, len);
 }
 
 static struct sk_buff *tcp_ipv4_payload(struct sk_buff *skb,

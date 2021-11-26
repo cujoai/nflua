@@ -378,6 +378,10 @@ static int nflua_reply(lua_State *L)
 		if (tcp_reply(ctx->skb, ctx->par, msg, len) != 0)
 			goto error;
 		break;
+	case 'u':
+		if (udp_reply(ctx->skb, ctx->par, msg, len) != 0)
+			goto error;
+		break;
 	default:
 		goto error;
 	}
