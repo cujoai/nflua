@@ -469,16 +469,17 @@ static int udp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	udph->source = oudph.dest;
 	udph->dest = oudph.source;
 	udph->len = htons(sizeof(struct udphdr) + len);
-	udplen = nskb->len - sizeof(struct ipv6hdr);
-	udph->check = 0;
 
 	data = skb_put(nskb, len);
 	memcpy(data, msg, len);
 
+	udplen = nskb->len - sizeof(struct ipv6hdr);
+	udph->check = 0;
+
 	udph->check = csum_ipv6_magic(&ipv6_hdr(nskb)->saddr,
-				      &ipv6_hdr(nskb)->daddr, udph->len,
+				      &ipv6_hdr(nskb)->daddr, udplen,
 				      IPPROTO_UDP,
-				      csum_partial(udph, udph->len, 0));
+				      csum_partial(udph, udplen, 0));
 
 	nskb->ip_summed = CHECKSUM_UNNECESSARY;
 
@@ -574,7 +575,7 @@ static struct sk_buff *udp_ipv6_payload(struct sk_buff *skb,
 
 	udplen = nskb->len - sizeof(struct ipv6hdr);
 
-	/* Adjust TCP checksum */
+	/* Adjust UDP checksum */
 	nudphp->check = 0;
 	nudphp->check = csum_ipv6_magic(&nip6h->saddr, &nip6h->daddr, udplen,
 					IPPROTO_UDP,
