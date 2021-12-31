@@ -615,9 +615,14 @@ static int nflua_skb_tostring(lua_State *L)
 
 static int nflua_time(lua_State *L)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	struct timespec64 ts;
+	ktime_get_real_ts64(&ts);
+#else
 	struct timespec ts;
-
 	getnstimeofday(&ts);
+#endif
+
 	lua_pushinteger(L, (lua_Integer)ts.tv_sec);
 	lua_pushinteger(L, (lua_Integer)(ts.tv_nsec / NSEC_PER_MSEC));
 
