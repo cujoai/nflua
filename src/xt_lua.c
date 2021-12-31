@@ -1181,9 +1181,6 @@ static int __init xt_lua_init(void)
 {
 	int ret;
 
-	if (!nf_util_init())
-		return -EFAULT;
-
 	if ((ret = register_pernet_subsys(&xt_lua_net_ops)))
 		return ret;
 
