@@ -100,6 +100,7 @@ struct xt_lua_net {
 	size_t alloc;
 	lua_State *L;
 	spinlock_t lock;
+	bool genl_registered;
 };
 
 static inline struct xt_lua_net *xt_lua_pernet(struct net *net)
@@ -1097,6 +1098,8 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 		if (ret != 0)
 			return -EPFNOSUPPORT;
+
+		xt_lua->genl_registered = true;
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
 		struct netlink_kernel_cfg cfg = {
@@ -1165,7 +1168,10 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 	if (sock != NULL)
 		netlink_kernel_release(sock);
 
-	genl_unregister_family(&genl_nflua_family);
+	if (xt_lua->genl_registered) {
+		genl_unregister_family(&genl_nflua_family);
+		xt_lua->genl_registered = false;
+	}
 
 	gennet = NULL;
 }
