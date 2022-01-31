@@ -100,6 +100,7 @@ struct xt_lua_net {
 	size_t alloc;
 	lua_State *L;
 	spinlock_t lock;
+	bool genl_registered;
 };
 
 static inline struct xt_lua_net *xt_lua_pernet(struct net *net)
@@ -615,9 +616,14 @@ static int nflua_skb_tostring(lua_State *L)
 
 static int nflua_time(lua_State *L)
 {
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 0, 0)
+	struct timespec64 ts;
+	ktime_get_real_ts64(&ts);
+#else
 	struct timespec ts;
-
 	getnstimeofday(&ts);
+#endif
+
 	lua_pushinteger(L, (lua_Integer)ts.tv_sec);
 	lua_pushinteger(L, (lua_Integer)(ts.tv_nsec / NSEC_PER_MSEC));
 
@@ -1092,6 +1098,8 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 		if (ret != 0)
 			return -EPFNOSUPPORT;
+
+		xt_lua->genl_registered = true;
 	} else {
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 6, 0)
 		struct netlink_kernel_cfg cfg = {
@@ -1160,7 +1168,10 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 	if (sock != NULL)
 		netlink_kernel_release(sock);
 
-	genl_unregister_family(&genl_nflua_family);
+	if (xt_lua->genl_registered) {
+		genl_unregister_family(&genl_nflua_family);
+		xt_lua->genl_registered = false;
+	}
 
 	gennet = NULL;
 }
@@ -1175,9 +1186,6 @@ static struct pernet_operations xt_lua_net_ops = {
 static int __init xt_lua_init(void)
 {
 	int ret;
-
-	if (!nf_util_init())
-		return -EFAULT;
 
 	if ((ret = register_pernet_subsys(&xt_lua_net_ops)))
 		return ret;

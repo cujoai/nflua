@@ -20,28 +20,9 @@
 #include <net/tcp.h>
 #include <net/route.h>
 #include <net/dst.h>
+#include <linux/inetdevice.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_ipv4/ip_tables.h>
-#ifdef MODULE
-#include <linux/kallsyms.h>
-
-static void (*__ip_forward_options)(struct sk_buff *);
-
-bool nf_util_init(void)
-{
-	return (__ip_forward_options = (void (*)(struct sk_buff *))
-			kallsyms_lookup_name("ip_forward_options")) != NULL;
-}
-
-#else
-
-#define __ip_forward_options(skb) (ip_forward_options(skb))
-
-bool nf_util_init(void)
-{
-	return true;
-}
-#endif
 
 #include "nf_util.h"
 
@@ -1057,6 +1038,62 @@ static int ipv4_forward_finish_gso(struct sk_buff *skb)
 	return ret;
 }
 #endif
+
+static void __ip_rt_get_source(u8 *addr, struct sk_buff *skb, struct rtable *rt)
+{
+	__be32 src;
+
+	// Too much functionality for the input case is not exported.
+	BUG_ON(rt_is_input_route(rt));
+
+	src = ip_hdr(skb)->saddr;
+	memcpy(addr, &src, 4);
+}
+
+static void __ip_forward_options(struct sk_buff *skb)
+{
+	struct ip_options *opt = &(IPCB(skb)->opt);
+	unsigned char *optptr;
+	struct rtable *rt = skb_rtable(skb);
+	unsigned char *raw = skb_network_header(skb);
+
+	if (opt->rr_needaddr) {
+		optptr = (unsigned char *)raw + opt->rr;
+		__ip_rt_get_source(&optptr[optptr[2] - 5], skb, rt);
+		opt->is_changed = 1;
+	}
+	if (opt->srr_is_hit) {
+		int srrptr, srrspace;
+
+		optptr = raw + opt->srr;
+
+		for (srrptr = optptr[2], srrspace = optptr[1];
+		     srrptr <= srrspace; srrptr += 4) {
+			if (srrptr + 3 > srrspace)
+				break;
+			if (memcmp(&opt->nexthop, &optptr[srrptr - 1], 4) == 0)
+				break;
+		}
+		if (srrptr + 3 <= srrspace) {
+			opt->is_changed = 1;
+			ip_hdr(skb)->daddr = opt->nexthop;
+			__ip_rt_get_source(&optptr[srrptr - 1], skb, rt);
+			optptr[2] = srrptr + 4;
+		} else {
+			net_crit_ratelimited("%s(): Argh! Destination lost!\n",
+					     __func__);
+		}
+		if (opt->ts_needaddr) {
+			optptr = raw + opt->ts;
+			__ip_rt_get_source(&optptr[optptr[2] - 9], skb, rt);
+			opt->is_changed = 1;
+		}
+	}
+	if (opt->is_changed) {
+		opt->is_changed = 0;
+		ip_send_check(ip_hdr(skb));
+	}
+}
 
 static int ipv4_forward_finish(struct sk_buff *skb)
 {

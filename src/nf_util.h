@@ -31,7 +31,6 @@ struct sk_buff *udp_payload(struct sk_buff *, unsigned char *, size_t);
 int finish_send(struct sk_buff *);
 int tcp_payload_length(const struct sk_buff *);
 int route_me_harder(struct net *, struct sk_buff *);
-bool nf_util_init(void);
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 10, 0)
 static inline struct net *xt_net(const struct xt_action_param *par)
