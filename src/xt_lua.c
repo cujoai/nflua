@@ -99,7 +99,12 @@ struct xt_lua_net {
 
 	size_t alloc;
 	lua_State *L;
+
+	/* Bottom halves must be disabled when this is taken, because
+	 * pre-emption into nflua_call would cause a recursive locking attempt.
+	 */
 	spinlock_t lock;
+
 	bool genl_registered;
 };
 
@@ -291,7 +296,7 @@ static union call_result nflua_call(struct sk_buff *skb,
 		break;
 	}
 
-	spin_lock(&xt_lua->lock);
+	spin_lock_bh(&xt_lua->lock);
 
 	L = xt_lua->L;
 
@@ -331,7 +336,7 @@ cleanup:
 	ldata_unref(L, ctx.packet);
 	lua_settop(L, base);
 unlock:
-	spin_unlock(&xt_lua->lock);
+	spin_unlock_bh(&xt_lua->lock);
 
 	return r;
 }
