@@ -80,6 +80,11 @@ static inline void ip6_flow_hdr(struct ipv6hdr *hdr, unsigned int tclass,
 }
 #endif
 
+// 5.11 mainline, backported to 5.10.121
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 121)
+#define flowi6_to_flowi_common(f) flowi6_to_flowi(f)
+#endif
+
 static int tcp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 			  unsigned char *msg, size_t len)
 {
@@ -150,7 +155,7 @@ static int tcp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	fl6.daddr = oip6h->saddr;
 	fl6.fl6_sport = otcph.dest;
 	fl6.fl6_dport = otcph.source;
-	security_skb_classify_flow(oldskb, flowi6_to_flowi(&fl6));
+	security_skb_classify_flow(oldskb, flowi6_to_flowi_common(&fl6));
 	dst = ip6_route_output(net, NULL, &fl6);
 	if (dst == NULL || dst->error) {
 		dst_release(dst);
@@ -408,7 +413,7 @@ static int udp_ipv6_reply(struct sk_buff *oldskb, struct xt_action_param *par,
 	fl6.daddr = oip6h->saddr;
 	fl6.fl6_sport = oudph.dest;
 	fl6.fl6_dport = oudph.source;
-	security_skb_classify_flow(oldskb, flowi6_to_flowi(&fl6));
+	security_skb_classify_flow(oldskb, flowi6_to_flowi_common(&fl6));
 	dst = ip6_route_output(net, NULL, &fl6);
 	if (dst == NULL || dst->error) {
 		dst_release(dst);
