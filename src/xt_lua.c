@@ -775,6 +775,24 @@ int nflua_hotdrop(lua_State *L)
 	return 0;
 }
 
+static int nflua_delete_conntrack(lua_State *L)
+{
+	struct nflua_ctx *ctx;
+	enum ip_conntrack_info info;
+	struct nf_conn *ct;
+
+	luaU_getregval(L, NFLUA_CTXENTRY, &ctx);
+	if (ctx == NULL)
+		return luaL_error(L, "couldn't get packet context");
+
+	ct = lua_gettop(L) == 0 ? nf_ct_get(ctx->skb, &info) :
+				  nflua_findconnid(L);
+	if (ct)
+		nf_ct_kill(ct);
+
+	return 0;
+}
+
 static int nflua_traffic(lua_State *L)
 {
 	struct nf_conn *ct = NULL;
@@ -871,6 +889,7 @@ static const luaL_Reg nflua_lib[] = {
 	{ "getpacket", nflua_getpacket },
 	{ "connid", nflua_connid },
 	{ "hotdrop", nflua_hotdrop },
+	{ "delete_conntrack", nflua_delete_conntrack },
 	{ "traffic", nflua_traffic },
 	{ "get_cpu_mem_info", nflua_get_cpu_mem_info },
 	{ "get_match_mask", nflua_get_match_mask },
