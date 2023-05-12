@@ -97,6 +97,8 @@ struct xt_lua_net {
 	/* ABI relied on by luaconntrack: This must be the first element. */
 	struct net *net;
 
+	struct net *gennet;
+
 	size_t alloc;
 	lua_State *L;
 
@@ -128,8 +130,6 @@ struct nftimer_ctx {
 };
 
 static struct genl_family genl_nflua_family;
-
-static struct net *gennet;
 
 static struct nla_policy genl_nflua_policy[GENL_NFLUA_ATTR_MAX + 1] = {
 	[GENL_NFLUA_ATTR_MSG] = { .type = NLA_BINARY,
@@ -457,6 +457,7 @@ static int nflua_genetlink(lua_State *L)
 	int pid = luaL_checkinteger(L, 2);
 	int err;
 	struct sk_buff *skb;
+	struct net *gennet;
 	void *msg_head;
 
 	skb = genlmsg_new(nla_total_size(size), GFP_ATOMIC);
@@ -478,6 +479,8 @@ static int nflua_genetlink(lua_State *L)
 	}
 
 	genlmsg_end(skb, msg_head);
+
+	gennet = luaU_getenv(L, struct xt_lua_net)->gennet;
 
 	err = genlmsg_unicast(gennet, skb, pid);
 	if (err != 0) {
@@ -1014,8 +1017,8 @@ static int genl_nflua_rx_msg(struct sk_buff *skb, struct genl_info *info)
 		len -= namelen + 1;
 	}
 
-	if (gennet == NULL)
-		gennet = genl_info_net(info);
+	if (xt_lua->gennet == NULL)
+		xt_lua->gennet = genl_info_net(info);
 
 	spin_lock_bh(&xt_lua->lock);
 	if (xt_lua->L == NULL) {
@@ -1149,6 +1152,7 @@ static int __net_init xt_lua_net_init(struct net *net)
 
 	spin_lock_bh(&xt_lua->lock);
 	xt_lua->net = net;
+	xt_lua->gennet = NULL;
 	xt_lua->alloc = 0;
 	xt_lua->L = L = lua_newstate(lua_alloc, xt_lua);
 	if (L == NULL) {
@@ -1197,7 +1201,7 @@ static void __net_exit xt_lua_net_exit(struct net *net)
 		xt_lua->genl_registered = false;
 	}
 
-	gennet = NULL;
+	xt_lua->gennet = NULL;
 }
 
 static struct pernet_operations xt_lua_net_ops = {
