@@ -24,8 +24,6 @@
 #include <xtables.h>
 #include <xt_lua.h>
 
-#define ARRAY_SIZE(a) (sizeof(a) / sizeof(a[0]))
-
 enum { O_FUNCTION = 0x02, O_TCP_PAYLOAD = 0x04, O_MASK = 0x08 };
 
 static void nflua_help(void)
@@ -151,7 +149,7 @@ static struct xtables_match nflua_mt_reg = {
 	.print = nflua_print,
 };
 
-static void _init(void)
+void _init(void)
 {
 	xtables_register_match(&nflua_mt_reg);
 }
