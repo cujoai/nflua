@@ -90,7 +90,7 @@ static struct xtables_target nflua_tg_reg = {
 #endif
 };
 
-static void _init(void)
+void _init(void)
 {
 	xtables_register_target(&nflua_tg_reg);
 }
